@@ -45,15 +45,21 @@ jobs:
         sudo mkdir -p /data/data/com.termux/files/usr/glibc
         sudo chmod 777 -R /data
 
-        meson setup .. \
-          --prefix=/data/data/com.termux/files/usr/glibc \
-          -Dgpl=enabled \
-          -Dgst-examples=disabled \
-          -Dtests=disabled \
-          -Dexamples=disabled \
-          -Dpython=disabled \
-          -Dauto_features=disabled \
-          --buildtype=release
+        meson setup build \
+        --prefix=/data/data/com.termux/files/usr/glibc \
+        -Dbase=enabled \
+        -Dgood=enabled \
+        -Dugly=enabled \
+        -Dbad=enabled \
+        -Dlibav=enabled \
+        -Dgpl=enabled \
+        -Dtests=disabled \
+        -Dexamples=disabled \
+        -Dpython=disabled \
+        -Dintrospection=disabled \
+        -Dgst-full=enabled \
+        -Dgst-full-plugins='*' \
+        --buildtype=release
 
         ninja -j$(nproc)
         ninja install
