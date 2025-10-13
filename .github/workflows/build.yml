@@ -32,19 +32,16 @@ jobs:
         meson --version
         ninja --version
 
-    - name: 克隆 GStreamer 源码
+    - name: 克隆 GStreamer 源码（最新版本）
       run: |
         git clone https://gitlab.freedesktop.org/gstreamer/gstreamer.git
         cd gstreamer
+        git fetch --tags
+        LATEST_TAG=$(git describe --tags `git rev-list --tags --max-count=1`)
+        echo "Latest tag: $LATEST_TAG"
+        git checkout $LATEST_TAG
         git submodule update --init --recursive
-
-    - name: 提取 GStreamer 版本号
-      id: version
-      run: |
-        cd gstreamer
-        VERSION=$(grep -Po "(?<=version: ')[^']+" meson.build)
-        echo "Detected version: $VERSION"
-        echo "VERSION=$VERSION" >> $GITHUB_ENV
+        echo "VERSION=${LATEST_TAG#v}" >> $GITHUB_ENV
 
     - name: 构建 GStreamer 解码器
       run: |
@@ -72,7 +69,7 @@ jobs:
         ninja -C build -j$(nproc)
         ninja -C build install
 
-    - name: 打包 glibc 文件夹 (附带版本号)
+    - name: 打包 glibc 文件夹（附带版本号）
       run: |
         cd /data/data/com.termux/files/usr
         TAR_NAME="termux-glibc-gst-decoders-${VERSION}.tar.gz"
