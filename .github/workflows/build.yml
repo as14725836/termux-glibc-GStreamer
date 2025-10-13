@@ -53,7 +53,7 @@ jobs:
         meson setup build \
           --libdir=lib \
           --prefix=/data/data/com.termux/files/usr/glibc \
-          -Dlibdir=lib \
+          -Dlibexecdir=lib/gstreamer1.0 \
           -Dbase=enabled \
           -Dgood=enabled \
           -Dugly=enabled \
