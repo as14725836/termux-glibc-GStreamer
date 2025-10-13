@@ -41,7 +41,6 @@ jobs:
     - name: 构建 GStreamer 解码器
       run: |
         cd gstreamer
-        mkdir build && cd build
         sudo mkdir -p /data/data/com.termux/files/usr/glibc
         sudo chmod 777 -R /data
 
@@ -61,8 +60,8 @@ jobs:
         -Dgst-full-plugins='*' \
         --buildtype=release
 
-        ninja -j$(nproc)
-        ninja install
+        ninja -C build -j$(nproc)
+        ninja -C build install
 
     - name: 打包 glibc 整个文件夹
       run: |
