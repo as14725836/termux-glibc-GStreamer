@@ -1,4 +1,4 @@
-name: Build GStreamer Decoders (aarch64)
+name: Build GStreamer Decoders (aarch64, Dev)
 
 on:
   workflow_dispatch:
@@ -23,7 +23,7 @@ jobs:
           pkg-config libglib2.0-dev libgstreamer1.0-dev \
           libgstreamer-plugins-base1.0-dev \
           liborc-0.4-dev libxv-dev libx11-dev \
-          libasound2-dev libpulse-dev
+          libasound2-dev libpulse-dev patchelf
 
     - name: 升级 Meson 和 Ninja 到最新版本
       run: |
@@ -32,18 +32,20 @@ jobs:
         meson --version
         ninja --version
 
-    - name: 克隆 GStreamer 源码（最新版本）
+    - name: 克隆 GStreamer 源码（开发版本）
       run: |
         git clone https://gitlab.freedesktop.org/gstreamer/gstreamer.git
         cd gstreamer
-        git fetch --tags
-        LATEST_TAG=$(git describe --tags `git rev-list --tags --max-count=1`)
-        echo "Latest tag: $LATEST_TAG"
-        git checkout $LATEST_TAG
+        git checkout main
+        git pull origin main
         git submodule update --init --recursive
-        echo "VERSION=${LATEST_TAG#v}" >> $GITHUB_ENV
+        # 生成版本号为 dev-commit_hash
+        DEV_HASH=$(git rev-parse --short HEAD)
+        VERSION="dev-${DEV_HASH}"
+        echo "VERSION=${VERSION}" >> $GITHUB_ENV
+        echo "使用开发版本: ${VERSION}"
 
-    - name: 构建 GStreamer 解码器
+    - name: 构建 GStreamer 开发解码器
       run: |
         cd gstreamer
         sudo mkdir -p /data/data/com.termux/files/usr/glibc
@@ -69,7 +71,17 @@ jobs:
         ninja -C build -j$(nproc)
         ninja -C build install
 
-    - name: 打包 glibc 文件夹（附带版本号）
+    - name: 对 glibc/bin 可执行文件应用 patchelf
+      run: |
+        GLIBC_BIN=/data/data/com.termux/files/usr/glibc/bin
+        for f in "$GLIBC_BIN"/*; do
+          if file "$f" | grep -q 'ELF.*executable'; then
+            echo "Patching interpreter for $f"
+            patchelf --set-interpreter /data/data/com.termux/files/usr/glibc/lib/ld-linux-aarch64.so.1 "$f"
+          fi
+        done
+
+    - name: 打包 glibc 文件夹（开发版本）
       run: |
         cd /data/data/com.termux/files/usr
         TAR_NAME="termux-glibc-gst-decoders-${VERSION}.tar.gz"
@@ -85,14 +97,14 @@ jobs:
     - name: 发布到 GitHub Release
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: v${{ env.VERSION }}
-        name: GStreamer Decoders v${{ env.VERSION }} (aarch64, Termux glibc)
+        tag_name: ${{ env.VERSION }}
+        name: GStreamer Decoders ${{ env.VERSION }} (aarch64, Termux glibc)
         files: /home/runner/${{ env.TAR_NAME }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: 输出完成信息
       run: |
-        echo "✅ GStreamer 解码器构建完成"
+        echo "✅ GStreamer 开发解码器构建完成"
         echo "📦 输出文件: $TAR_NAME"
         echo "🔖 版本号: $VERSION"
