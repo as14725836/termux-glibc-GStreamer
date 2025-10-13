@@ -53,16 +53,19 @@ jobs:
         meson setup build \
           --libdir=lib \
           --prefix=/data/data/com.termux/files/usr/glibc \
-          -Dlibexecdir=lib \
+          -Dlibdir=lib \
           -Dbase=enabled \
           -Dgood=enabled \
           -Dugly=enabled \
           -Dbad=enabled \
           -Dlibav=enabled \
           -Dgpl=enabled \
+          -Ddefault_library=shared \
           -Dtests=disabled \
+          -Ddoc=disabled \
           -Dexamples=disabled \
           -Dpython=disabled \
+          -Dgst-plugins-good:rtp=disabled \
           -Dintrospection=disabled \
           -Dgst-full=enabled \
           -Dgst-full-plugins='*' \
