@@ -1,0 +1,78 @@
+name: Build GStreamer Decoders (aarch64)
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+permissions:
+  contents: write  # 允许 GITHUB_TOKEN 创建 Release
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+    - name: 检出源码
+      uses: actions/checkout@v4
+
+    - name: 安装构建依赖
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential meson ninja-build \
+          pkg-config python3-pip git \
+          libglib2.0-dev libgstreamer1.0-dev \
+          libgstreamer-plugins-base1.0-dev \
+          liborc-0.4-dev libxv-dev libx11-dev \
+          libasound2-dev libpulse-dev
+
+    - name: 克隆 GStreamer gst-plugins-bad 源码
+      run: |
+        git clone https://gitlab.freedesktop.org/gstreamer/gstreamer.git
+        cd gstreamer
+        git submodule update --init --recursive
+
+    - name: 构建 GStreamer 解码器
+      run: |
+        cd gstreamer
+        mkdir build && cd build
+        sudo mkdir -p /data/data/com.termux/files/usr/glibc
+        sudo chmod 777 -R /data
+
+        meson setup .. \
+          --prefix=/data/data/com.termux/files/usr/glibc \
+          -Dgpl=enabled \
+          -Dgst-examples=disabled \
+          -Dtests=disabled \
+          -Dexamples=disabled \
+          -Dpython=disabled \
+          -Dauto_features=disabled \
+          --buildtype=release
+
+        ninja -j$(nproc)
+        ninja install
+
+    - name: 打包 glibc 整个文件夹
+      run: |
+        cd /data/data/com.termux/files/usr
+        tar -czvf ~/termux-glibc-gst-decoders.tar.gz glibc
+
+    - name: 上传构建产物
+      uses: actions/upload-artifact@v4
+      with:
+        name: termux-glibc-gst-decoders
+        path: ~/termux-glibc-gst-decoders.tar.gz
+
+    - name: 发布到 GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ github.ref_name }}
+        name: GStreamer Decoders (aarch64, Termux glibc)
+        files: ~/termux-glibc-gst-decoders.tar.gz
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: 输出完成信息
+      run: |
+        echo "✅ GStreamer 解码器 (gst-plugins-bad) 构建完成并发布 Release"
+        echo "📦 已打包 /data/data/com.termux/files/usr/glibc 整个文件夹"
