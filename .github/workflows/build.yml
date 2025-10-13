@@ -53,6 +53,7 @@ jobs:
         meson setup build \
           --libdir=lib \
           --prefix=/data/data/com.termux/files/usr/glibc \
+          -Dlibexecdir=lib \
           -Dbase=enabled \
           -Dgood=enabled \
           -Dugly=enabled \
@@ -80,13 +81,13 @@ jobs:
           fi
         done
 
-    - name: 复制 gstreamer-1.0 到 glibc/libc
+    - name: 复制 gstreamer-1.0 到 glibc/lib
       run: |
-        SRC=/data/data/com.termux/files/usr/glibc/libexec/gstreamer-1.0
-        DST=/data/data/com.termux/files/usr/glibc/libc
-        sudo mkdir -p "$DST"
-        sudo cp -r "$SRC" "$DST"
-        echo "✅ 已复制 gstreamer-1.0 到 glibc/libc"
+      #  SRC=/data/data/com.termux/files/usr/glibc/libexec/gstreamer-1.0
+      #  DST=/data/data/com.termux/files/usr/glibc/lib
+      #  sudo mkdir -p "$DST"
+      #  sudo cp -r "$SRC" "$DST"
+      #  echo "✅ 已复制 gstreamer-1.0 到 glibc/libc"
 
     - name: 打包 glibc 文件夹（开发版本）
       run: |
