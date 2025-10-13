@@ -73,21 +73,21 @@ jobs:
       run: |
         cd /data/data/com.termux/files/usr
         TAR_NAME="termux-glibc-gst-decoders-${VERSION}.tar.gz"
-        tar -czvf ~/${TAR_NAME} glibc
+        tar -czvf /home/runner/${TAR_NAME} glibc
         echo "TAR_NAME=${TAR_NAME}" >> $GITHUB_ENV
 
     - name: 上传构建产物
       uses: actions/upload-artifact@v4
       with:
         name: ${{ env.TAR_NAME }}
-        path: ~/$(echo ${{ env.TAR_NAME }})
+        path: /home/runner/${{ env.TAR_NAME }}
 
     - name: 发布到 GitHub Release
       uses: softprops/action-gh-release@v1
       with:
         tag_name: v${{ env.VERSION }}
         name: GStreamer Decoders v${{ env.VERSION }} (aarch64, Termux glibc)
-        files: ~/$(echo ${{ env.TAR_NAME }})
+        files: /home/runner/${{ env.TAR_NAME }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
