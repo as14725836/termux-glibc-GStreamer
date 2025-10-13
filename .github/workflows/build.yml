@@ -34,13 +34,13 @@ jobs:
 
     - name: 克隆 GStreamer gst-plugins-bad 源码
       run: |
-        git clone https://gitlab.freedesktop.org/gstreamer/gst-plugins-bad.git
-        cd gst-plugins-bad
+        git clone https://gitlab.freedesktop.org/gstreamer/gstreamer.git
+        cd gstreamer
         git submodule update --init --recursive
 
     - name: 构建 GStreamer 解码器
       run: |
-        cd gst-plugins-bad
+        cd gstreamer
         mkdir build && cd build
         sudo mkdir -p /data/data/com.termux/files/usr/glibc
         sudo chmod 777 -R /data
