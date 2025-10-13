@@ -49,7 +49,6 @@ jobs:
         cd gstreamer
         sudo mkdir -p /data/data/com.termux/files/usr/glibc
         sudo chmod 777 -R /data
-
         meson setup build \
           --libdir=lib \
           --prefix=/data/data/com.termux/files/usr/glibc \
@@ -70,27 +69,30 @@ jobs:
           -Dgst-full=enabled \
           -Dgst-full-plugins='*' \
           --buildtype=release
-
         ninja -C build -j$(nproc)
         ninja -C build install
 
-    - name: 对 glibc/bin 可执行文件应用 patchelf
+    - name: 对 glibc 下的 ELF 可执行文件应用 patchelf
       run: |
-        GLIBC_BIN=/data/data/com.termux/files/usr/glibc/bin
-        for f in "$GLIBC_BIN"/*; do
+        INTERP=/data/data/com.termux/files/usr/glibc/lib/ld-linux-aarch64.so.1
+        ROOT=/data/data/com.termux/files/usr/glibc
+
+        # bin 目录
+        for f in "$ROOT/bin/"*; do
           if file "$f" | grep -q 'ELF.*executable'; then
-            echo "Patching interpreter for $f"
-            patchelf --set-interpreter /data/data/com.termux/files/usr/glibc/lib/ld-linux-aarch64.so.1 "$f"
+            echo "Patching: $f"
+            patchelf --set-interpreter "$INTERP" "$f" || true
           fi
         done
 
-    - name: 复制 gstreamer-1.0 到 glibc/lib
-      run: |
-      #  SRC=/data/data/com.termux/files/usr/glibc/libexec/gstreamer-1.0
-      #  DST=/data/data/com.termux/files/usr/glibc/lib
-      #  sudo mkdir -p "$DST"
-      #  sudo cp -r "$SRC" "$DST"
-      #  echo "✅ 已复制 gstreamer-1.0 到 glibc/libc"
+        # lib/gstreamer1.0 目录
+        if [ -d "$ROOT/lib/gstreamer1.0/gstreamer-1.0" ]; then
+          for f in "$ROOT/lib/gstreamer1.0/gstreamer-1.0/"*; do
+            if file "$f" | grep -q 'ELF'; then
+              echo "Patching: $f"
+              patchelf --set-interpreter "$INTERP" "$f" || true
+            fi
+          done
 
     - name: 打包 glibc 文件夹（开发版本）
       run: |
