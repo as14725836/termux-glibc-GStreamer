@@ -39,7 +39,6 @@ jobs:
         git checkout main
         git pull origin main
         git submodule update --init --recursive
-        # 生成版本号为 dev-commit_hash
         DEV_HASH=$(git rev-parse --short HEAD)
         VERSION="dev-${DEV_HASH}"
         echo "VERSION=${VERSION}" >> $GITHUB_ENV
@@ -80,6 +79,14 @@ jobs:
             patchelf --set-interpreter /data/data/com.termux/files/usr/glibc/lib/ld-linux-aarch64.so.1 "$f"
           fi
         done
+
+    - name: 复制 gstreamer-1.0 到 glibc/libc
+      run: |
+        SRC=/data/data/com.termux/files/usr/glibc/libexec/gstreamer-1.0
+        DST=/data/data/com.termux/files/usr/glibc/libc
+        sudo mkdir -p "$DST"
+        sudo cp -r "$SRC" "$DST"
+        echo "✅ 已复制 gstreamer-1.0 到 glibc/libc"
 
     - name: 打包 glibc 文件夹（开发版本）
       run: |
