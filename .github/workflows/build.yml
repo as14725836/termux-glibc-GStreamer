@@ -64,7 +64,6 @@ jobs:
             -Ddoc=disabled \
             -Dexamples=disabled \
             -Dpython=disabled \
-            -Daom=enabled \
             -Ddav1d=enabled \
             -Drav1e=disabled \
             -Dtheora=enabled \
