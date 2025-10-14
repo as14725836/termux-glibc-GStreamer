@@ -12,112 +12,116 @@ jobs:
     runs-on: ubuntu-24.04-arm
 
     steps:
-    - name: 检出源码
-      uses: actions/checkout@v4
+      - name: 检出源码
+        uses: actions/checkout@v4
 
-    - name: 安装基础依赖
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          build-essential python3-pip git \
-          pkg-config libglib2.0-dev libgstreamer1.0-dev \
-          libgstreamer-plugins-base1.0-dev \
-          liborc-0.4-dev libxv-dev libx11-dev \
-          libasound2-dev libpulse-dev patchelf
+      - name: 安装基础依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential python3-pip git \
+            pkg-config libglib2.0-dev libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            liborc-0.4-dev libxv-dev libx11-dev \
+            libasound2-dev libpulse-dev patchelf
 
-    - name: 升级 Meson 和 Ninja 到最新版本
-      run: |
-        pip install --upgrade pip
-        pip install --upgrade meson ninja
-        meson --version
-        ninja --version
+      - name: 升级 Meson 和 Ninja 到最新版本
+        run: |
+          pip install --upgrade pip
+          pip install --upgrade meson ninja
+          meson --version
+          ninja --version
 
-    - name: 克隆 GStreamer 源码（开发版本）
-      run: |
-        git clone https://gitlab.freedesktop.org/gstreamer/gstreamer.git
-        cd gstreamer
-        git checkout main
-        git pull origin main
-        git submodule update --init --recursive
-        DEV_HASH=$(git rev-parse --short HEAD)
-        VERSION="dev-${DEV_HASH}"
-        echo "VERSION=${VERSION}" >> $GITHUB_ENV
-        echo "使用开发版本: ${VERSION}"
+      - name: 克隆 GStreamer 源码（开发版本）
+        run: |
+          git clone https://gitlab.freedesktop.org/gstreamer/gstreamer.git
+          cd gstreamer
+          git checkout main
+          git pull origin main
+          git submodule update --init --recursive
+          DEV_HASH=$(git rev-parse --short HEAD)
+          VERSION="dev-${DEV_HASH}"
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "使用开发版本: ${VERSION}"
 
-    - name: 构建 GStreamer 开发解码器
-      run: |
-        cd gstreamer
-        sudo mkdir -p /data/data/com.termux/files/usr/glibc
-        sudo chmod 777 -R /data
-        meson setup build \
-          --libdir=lib \
-          --prefix=/data/data/com.termux/files/usr/glibc \
-          -Dlibexecdir=lib/gstreamer1.0 \
-          -Dbase=enabled \
-          -Dgood=enabled \
-          -Dugly=enabled \
-          -Dbad=enabled \
-          -Dlibav=enabled \
-          -Dgpl=enabled \
-          -Ddefault_library=shared \
-          -Dtests=disabled \
-          -Ddoc=disabled \
-          -Dexamples=disabled \
-          -Dpython=disabled \
-          -Dgst-plugins-good:rtp=disabled \
-          -Dintrospection=disabled \
-          -Dgst-full=enabled \
-          -Dgst-full-plugins='*' \
-          --buildtype=release
-        ninja -C build -j$(nproc)
-        ninja -C build install
+      - name: 构建 GStreamer 开发解码器
+        run: |
+          cd gstreamer
+          sudo mkdir -p /data/data/com.termux/files/usr/glibc
+          sudo chmod -R 777 /data
+          meson setup build \
+            --prefix=/data/data/com.termux/files/usr/glibc \
+            --libdir=lib \
+            -Dlibexecdir=lib/gstreamer1.0 \
+            -Dbase=enabled \
+            -Dgood=enabled \
+            -Dugly=enabled \
+            -Dbad=enabled \
+            -Dlibav=enabled \
+            -Dgpl=enabled \
+            -Ddefault_library=shared \
+            -Dtests=disabled \
+            -Ddoc=disabled \
+            -Drs=disabled \
+            -Dexamples=disabled \
+            -Dpython=disabled \
+            -Dgst-plugins-good:rtp=disabled \
+            -Dintrospection=disabled \
+            -Dgst-full=enabled \
+            -Dgst-full-plugins='*' \
+            --buildtype=release
+          ninja -C build -j$(nproc)
+          ninja -C build install
 
-    - name: 对 glibc 下的 ELF 可执行文件应用 patchelf
-      run: |
-        INTERP=/data/data/com.termux/files/usr/glibc/lib/ld-linux-aarch64.so.1
-        ROOT=/data/data/com.termux/files/usr/glibc
+      - name: 对 glibc 下的 ELF 可执行文件应用 patchelf
+        run: |
+          INTERP=/data/data/com.termux/files/usr/glibc/lib/ld-linux-aarch64.so.1
+          ROOT=/data/data/com.termux/files/usr/glibc
 
-        # bin 目录
-        for f in "$ROOT/bin/"*; do
-          if file "$f" | grep -q 'ELF.*executable'; then
-            echo "Patching: $f"
-            patchelf --set-interpreter "$INTERP" "$f" || true
+          echo "✅ 修补 bin 目录..."
+          if [ -d "$ROOT/bin" ]; then
+            for f in "$ROOT/bin/"*; do
+              if file "$f" | grep -q 'ELF.*executable'; then
+                echo "Patching: $f"
+                patchelf --set-interpreter "$INTERP" "$f" || true
+              fi
+            done
           fi
-        done
 
-        # lib/gstreamer1.0 目录
-        if [ -d "$ROOT/lib/gstreamer1.0/gstreamer-1.0" ]; then
-          for f in "$ROOT/lib/gstreamer1.0/gstreamer-1.0/"*; do
-            if file "$f" | grep -q 'ELF'; then
-              echo "Patching: $f"
-              patchelf --set-interpreter "$INTERP" "$f" || true
-            fi
-          done
+          echo "✅ 修补 lib/gstreamer1.0/gstreamer-1.0 目录..."
+          if [ -d "$ROOT/lib/gstreamer1.0/gstreamer-1.0" ]; then
+            for f in "$ROOT/lib/gstreamer1.0/gstreamer-1.0/"*; do
+              if file "$f" | grep -q 'ELF'; then
+                echo "Patching: $f"
+                patchelf --set-interpreter "$INTERP" "$f" || true
+              fi
+            done
+          fi
 
-    - name: 打包 glibc 文件夹（开发版本）
-      run: |
-        cd /data/data/com.termux/files/usr
-        TAR_NAME="termux-glibc-gst-decoders-${VERSION}.tar.gz"
-        tar -czvf /home/runner/${TAR_NAME} glibc
-        echo "TAR_NAME=${TAR_NAME}" >> $GITHUB_ENV
+      - name: 打包 glibc 文件夹（开发版本）
+        run: |
+          cd /data/data/com.termux/files/usr
+          TAR_NAME="termux-glibc-gst-decoders-${VERSION}.tar.gz"
+          tar -czvf /home/runner/${TAR_NAME} glibc
+          echo "TAR_NAME=${TAR_NAME}" >> $GITHUB_ENV
 
-    - name: 上传构建产物
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ env.TAR_NAME }}
-        path: /home/runner/${{ env.TAR_NAME }}
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.TAR_NAME }}
+          path: /home/runner/${{ env.TAR_NAME }}
 
-    - name: 发布到 GitHub Release
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: ${{ env.VERSION }}
-        name: GStreamer Decoders ${{ env.VERSION }} (aarch64, Termux glibc)
-        files: /home/runner/${{ env.TAR_NAME }}
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: 发布到 GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ env.VERSION }}
+          name: GStreamer Decoders ${{ env.VERSION }} (aarch64, Termux glibc)
+          files: /home/runner/${{ env.TAR_NAME }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: 输出完成信息
-      run: |
-        echo "✅ GStreamer 开发解码器构建完成"
-        echo "📦 输出文件: $TAR_NAME"
-        echo "🔖 版本号: $VERSION"
+      - name: 输出完成信息
+        run: |
+          echo "✅ GStreamer 开发解码器构建完成"
+          echo "📦 输出文件: ${{ env.TAR_NAME }}"
+          echo "🔖 版本号: ${{ env.VERSION }}"
