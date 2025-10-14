@@ -1,4 +1,4 @@
-name: Build GStreamer Decoders (aarch64, Dev)
+name: Build GStreamer Decoders (aarch64,termux-glibc Dev)
 
 on:
   workflow_dispatch:
