@@ -64,9 +64,7 @@ jobs:
             -Ddoc=disabled \
             -Dexamples=disabled \
             -Dpython=disabled \
-            -Ddav1d=enabled \
-            -Drav1e=disabled \
-            -Dtheora=enabled \
+            -Dgst-plugins-bad:av1=enabled \
             -Dgst-plugins-good:rtp=disabled \
             -Dgst-plugins-bad:rsvp=disabled \
             -Dintrospection=disabled \
