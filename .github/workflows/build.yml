@@ -23,7 +23,9 @@ jobs:
             pkg-config libglib2.0-dev libgstreamer1.0-dev \
             libgstreamer-plugins-base1.0-dev \
             liborc-0.4-dev libxv-dev libx11-dev \
-            libasound2-dev libpulse-dev patchelf
+            libasound2-dev libpulse-dev patchelf \
+            libtheora-dev libvpx-dev libx264-dev libx265-dev \
+            libdav1d-dev libgav1-dev
 
       - name: 升级 Meson 和 Ninja 到最新版本
         run: |
@@ -64,9 +66,6 @@ jobs:
             -Ddoc=disabled \
             -Dexamples=disabled \
             -Dpython=disabled \
-            -Dgst-plugins-bad:av1=enabled \
-            -Dgst-plugins-good:rtp=disabled \
-            -Dgst-plugins-bad:rsvp=disabled \
             -Dintrospection=disabled \
             -Dgst-full=enabled \
             -Dgst-full-plugins='*' \
