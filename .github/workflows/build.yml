@@ -62,10 +62,12 @@ jobs:
             -Ddefault_library=shared \
             -Dtests=disabled \
             -Ddoc=disabled \
-            -Drs=disabled \
             -Dexamples=disabled \
             -Dpython=disabled \
+            -Dgst-plugins-good:theora=enabled \
+            -Dgst-plugins-bad:av1=enabled \
             -Dgst-plugins-good:rtp=disabled \
+            -Dgst-plugins-bad:rsvp=disabled \
             -Dintrospection=disabled \
             -Dgst-full=enabled \
             -Dgst-full-plugins='*' \
