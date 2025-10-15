@@ -5,7 +5,7 @@ on:
   pull_request:
 
 permissions:
-  contents: write  # 允许 GITHUB_TOKEN 创建 Release
+  contents: write
 
 jobs:
   build:
@@ -15,7 +15,14 @@ jobs:
       - name: 检出源码
         uses: actions/checkout@v4
 
-      - name: 安装基础依赖（系统 FFmpeg & GStreamer）
+      - name: 移除 subprojects/gst-libav（确保全外部）
+        run: |
+          if [ -d "gstreamer/subprojects/gst-libav" ]; then
+            rm -rf gstreamer/subprojects/gst-libav
+            echo "✅ 删除内部 gst-libav wrap"
+          fi
+
+      - name: 安装系统依赖（确保 FFmpeg 外部依赖）
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -25,6 +32,7 @@ jobs:
             libtheora-dev libvpx-dev libx264-dev libx265-dev \
             libdav1d-dev libgav1-dev patchelf \
             libavcodec-dev libavformat-dev libavutil-dev libswresample-dev \
+            libavfilter-dev libavdevice-dev \
             libgstreamer1.0-dev \
             libgstreamer-plugins-base1.0-dev \
             gstreamer1.0-tools \
@@ -52,7 +60,7 @@ jobs:
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "使用开发版本: ${VERSION}"
 
-      - name: 构建 GStreamer 解码器（使用系统 FFmpeg）
+      - name: 构建 GStreamer 解码器（全外部 FFmpeg）
         run: |
           cd gstreamer
           sudo mkdir -p /data/data/com.termux/files/usr/glibc
