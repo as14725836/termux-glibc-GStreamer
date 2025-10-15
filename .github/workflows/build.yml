@@ -1,16 +1,11 @@
 name: Build GStreamer Decoders (aarch64, Dev)
 
 on:
-  workflow_dispatch:           # 手动触发
-  schedule:                    # 每日自动触发
-    - cron: '0 3 * * *'       # 每天 UTC 时间 03:00
-  push:
-    branches:
-      - main                  # 主分支有新提交时触发
+  workflow_dispatch:
   pull_request:
 
 permissions:
-  contents: write
+  contents: write  # 允许 GITHUB_TOKEN 创建 Release
 
 jobs:
   build:
@@ -19,35 +14,8 @@ jobs:
     steps:
       - name: 检出源码
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0       # 获取完整历史
-
-      - name: 获取最新提交 hash
-        id: get_hash
-        run: |
-          cd gstreamer || git clone https://gitlab.freedesktop.org/gstreamer/gstreamer.git gstreamer
-          cd gstreamer
-          git fetch origin main
-          git checkout main
-          git pull origin main
-          git submodule update --init --recursive
-          DEV_HASH=$(git rev-parse --short HEAD)
-          echo "DEV_HASH=$DEV_HASH" >> $GITHUB_ENV
-          echo "最新提交 hash: $DEV_HASH"
-
-      - name: 检查是否已构建过此版本
-        id: check_build
-        run: |
-          LAST_FILE="/home/runner/last_build_hash.txt"
-          if [ -f "$LAST_FILE" ] && grep -q "${DEV_HASH}" "$LAST_FILE"; then
-            echo "版本 $DEV_HASH 已构建过，跳过构建。"
-            echo "SKIP_BUILD=true" >> $GITHUB_ENV
-          else
-            echo "SKIP_BUILD=false" >> $GITHUB_ENV
-          fi
 
       - name: 安装基础依赖
-        if: env.SKIP_BUILD == 'false'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -57,24 +25,29 @@ jobs:
             liborc-0.4-dev libxv-dev libx11-dev \
             libasound2-dev libpulse-dev patchelf \
             libtheora-dev libvpx-dev libx264-dev libx265-dev \
-            libdav1d-dev libgav1-dev \
-            libavcodec-dev libavformat-dev libavutil-dev libswresample-dev \
-            libavfilter-dev libavdevice-dev
-
-      - name: 升级 Meson 和 Ninja
-        if: env.SKIP_BUILD == 'false'
+            libdav1d-dev libgav1-dev
+      - name: 升级 Meson 和 Ninja 到最新版本
         run: |
           pip install --upgrade pip
           pip install --upgrade meson ninja
-
+          meson --version
+          ninja --version
+      - name: 克隆 GStreamer 源码（开发版本）
+        run: |
+          git clone https://gitlab.freedesktop.org/gstreamer/gstreamer.git
+          cd gstreamer
+          git checkout main
+          git pull origin main
+          git submodule update --init --recursive
+          DEV_HASH=$(git rev-parse --short HEAD)
+          VERSION="dev-${DEV_HASH}"
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "使用开发版本: ${VERSION}"
       - name: 构建 GStreamer 开发解码器
-        if: env.SKIP_BUILD == 'false'
         run: |
           cd gstreamer
           sudo mkdir -p /data/data/com.termux/files/usr/glibc
           sudo chmod -R 777 /data
-          VERSION="dev-${DEV_HASH}"
-          echo "VERSION=${VERSION}" >> $GITHUB_ENV
           meson setup build \
             --prefix=/data/data/com.termux/files/usr/glibc \
             --libdir=lib \
@@ -96,40 +69,41 @@ jobs:
             --buildtype=release
           ninja -C build -j$(nproc)
           ninja -C build install
-
-      - name: 对 ELF 可执行文件应用 patchelf
-        if: env.SKIP_BUILD == 'false'
+      - name: 对 glibc 下的 ELF 可执行文件应用 patchelf
         run: |
           INTERP=/data/data/com.termux/files/usr/glibc/lib/ld-linux-aarch64.so.1
           ROOT=/data/data/com.termux/files/usr/glibc
-          for dir in bin lib/gstreamer1.0/gstreamer-1.0; do
-            if [ -d "$ROOT/$dir" ]; then
-              for f in "$ROOT/$dir/"*; do
-                if file "$f" | grep -q 'ELF'; then
-                  patchelf --set-interpreter "$INTERP" "$f" || true
-                fi
-              done
-            fi
-          done
-
-      - name: 打包 glibc 文件夹
-        if: env.SKIP_BUILD == 'false'
+          echo "✅ 修补 bin 目录..."
+          if [ -d "$ROOT/bin" ]; then
+            for f in "$ROOT/bin/"*; do
+              if file "$f" | grep -q 'ELF.*executable'; then
+                echo "Patching: $f"
+                patchelf --set-interpreter "$INTERP" "$f" || true
+              fi
+            done
+          fi
+          echo "✅ 修补 lib/gstreamer1.0/gstreamer-1.0 目录..."
+          if [ -d "$ROOT/lib/gstreamer1.0/gstreamer-1.0" ]; then
+            for f in "$ROOT/lib/gstreamer1.0/gstreamer-1.0/"*; do
+              if file "$f" | grep -q 'ELF'; then
+                echo "Patching: $f"
+                patchelf --set-interpreter "$INTERP" "$f" || true
+              fi
+            done
+          fi
+      - name: 打包 glibc 文件夹（开发版本）
         run: |
           cd /data/data/com.termux/files/usr
-          TAR_NAME="termux-glibc-gst-decoders-${DEV_HASH}.tar.gz"
+          TAR_NAME="termux-glibc-gst-decoders-${VERSION}.tar.gz"
           tar -czvf /home/runner/${TAR_NAME} glibc
           echo "TAR_NAME=${TAR_NAME}" >> $GITHUB_ENV
-          echo "${DEV_HASH}" > /home/runner/last_build_hash.txt
-
       - name: 上传构建产物
-        if: env.SKIP_BUILD == 'false'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.TAR_NAME }}
           path: /home/runner/${{ env.TAR_NAME }}
 
       - name: 发布到 GitHub Release
-        if: env.SKIP_BUILD == 'false'
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ env.VERSION }}
@@ -140,9 +114,6 @@ jobs:
 
       - name: 输出完成信息
         run: |
-          if [ "${SKIP_BUILD}" = "true" ]; then
-            echo "⚠️ 构建已跳过，版本 $DEV_HASH 已存在"
-          else
-            echo "✅ GStreamer 开发解码器构建完成"
-            echo "📦 输出文件: ${{ env.TAR_NAME }}"
-            echo "🔖 版本号: ${{ env.VERSION }}"
+          echo "✅ GStreamer 开发解码器构建完成"
+          echo "📦 输出文件: ${{ env.TAR_NAME }}"
+          echo "🔖 版本号: ${{ env.VERSION }}"
