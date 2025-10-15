@@ -15,7 +15,7 @@ jobs:
       - name: 检出源码
         uses: actions/checkout@v4
 
-      - name: 安装基础依赖（含系统 FFmpeg）
+      - name: 安装基础依赖（系统 FFmpeg & GStreamer）
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -33,7 +33,7 @@ jobs:
             gstreamer1.0-plugins-bad \
             gstreamer1.0-plugins-ugly
 
-      - name: 升级 Meson 和 Ninja 到最新版本
+      - name: 升级 Meson 和 Ninja
         run: |
           pip install --upgrade pip
           pip install --upgrade meson ninja
@@ -67,8 +67,6 @@ jobs:
             -Dugly=enabled \
             -Dbad=enabled \
             -Dlibav=enabled \
-            -Dgst-libav:libav=system \
-            -Dgst-libav:libav-extra=true \
             -Dgpl=enabled \
             -Ddefault_library=shared \
             -Dtests=disabled \
