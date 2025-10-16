@@ -9,12 +9,15 @@ on:
 permissions:
   contents: write  # 允许 GITHUB_TOKEN 创建 Release
 
+env:
+  LAST_COMMIT_FILE: last_gst_commit.txt
+
 jobs:
   build:
     runs-on: ubuntu-24.04-arm
 
     steps:
-      # 🧩 检出源码
+      # 🧩 检出仓库
       - name: 检出源码
         uses: actions/checkout@v4
 
@@ -32,7 +35,7 @@ jobs:
             libdav1d-dev libgav1-dev
 
       # ⚙️ 升级 Meson 和 Ninja
-      - name: 升级 Meson 和 Ninja 到最新版本
+      - name: 升级 Meson 和 Ninja
         run: |
           pip install --upgrade pip
           pip install --upgrade meson ninja
@@ -50,50 +53,30 @@ jobs:
           git submodule update --init --recursive
           echo "LATEST_COMMIT=$(git rev-parse HEAD)" >> $GITHUB_ENV
 
-      # 💾 智能检测 + 下载上次构建提交记录
-      - name: 检查是否存在上次构建提交记录
-        id: check_artifact
+      # 💾 获取/初始化上次构建提交
+      - name: 获取/初始化上次构建提交
+        id: get_last
         run: |
-          echo "🔍 正在检测是否存在上次构建的提交记录..."
-          ARTIFACT_API="https://api.github.com/repos/${{ github.repository }}/actions/artifacts"
-          RESPONSE=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$ARTIFACT_API")
-          if echo "$RESPONSE" | grep -q '"name": "last-gst-decoders-commit"'; then
-            echo "artifact_exists=true" >> $GITHUB_OUTPUT
-            echo "✅ 检测到上次构建的提交记录 artifact。"
+          FILE=${{ env.LAST_COMMIT_FILE }}
+          if [ -f "$FILE" ]; then
+            LAST_COMMIT=$(cat "$FILE")
+            echo "上次构建 commit: $LAST_COMMIT"
           else
-            echo "artifact_exists=false" >> $GITHUB_OUTPUT
-            echo "⚪ 未检测到上次构建记录（可能是首次运行）。"
+            echo "未找到上次构建记录，首次初始化"
+            echo "none" > "$FILE"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add "$FILE"
+            git commit -m "chore: 初始化 last_gst_commit.txt"
+            git push origin HEAD:${{ github.ref_name }}
+            LAST_COMMIT="none"
           fi
-
-      # ⬇️ 下载上次构建提交记录（如果存在）
-      - name: 下载上次构建提交记录
-        if: steps.check_artifact.outputs.artifact_exists == 'true'
-        uses: actions/download-artifact@v4
-        with:
-          name: last-gst-decoders-commit
-          path: ./last_commit
-
-      # ⚪ 如果不存在则创建空目录避免后续报错
-      - name: 创建空 last_commit 目录
-        if: steps.check_artifact.outputs.artifact_exists == 'false'
-        run: |
-          mkdir -p ./last_commit
-          echo "none" > ./last_commit/last_gst_commit.txt
+          echo "LAST_COMMIT=$LAST_COMMIT" >> $GITHUB_ENV
 
       # 🔍 检查是否需要构建
       - name: 检查是否需要构建
         id: check_build
         run: |
-          LAST_COMMIT_FILE="./last_commit/last_gst_commit.txt"
-          if [ -f "$LAST_COMMIT_FILE" ]; then
-            LAST_COMMIT=$(cat "$LAST_COMMIT_FILE")
-          else
-            LAST_COMMIT="none"
-          fi
-
-          echo "上次构建 commit: $LAST_COMMIT"
-          echo "最新源码 commit: $LATEST_COMMIT"
-
           if [ "$LATEST_COMMIT" = "$LAST_COMMIT" ]; then
             echo "skip_build=true" >> $GITHUB_OUTPUT
           else
@@ -164,9 +147,9 @@ jobs:
           TAR_NAME="termux-glibc-gst-decoders-${LATEST_COMMIT:0:7}.tar.gz"
           tar -czvf /home/runner/${TAR_NAME} glibc
           echo "TAR_NAME=${TAR_NAME}" >> $GITHUB_ENV
-          echo "$LATEST_COMMIT" > last_gst_commit.txt
+          echo "$LATEST_COMMIT" > ${{ env.LAST_COMMIT_FILE }}
 
-      # ⬆️ 上传产物
+      # ⬆️ 上传构建产物
       - name: 上传构建产物
         if: steps.check_build.outputs.skip_build == 'false'
         uses: actions/upload-artifact@v4
@@ -174,13 +157,13 @@ jobs:
           name: ${{ env.TAR_NAME }}
           path: /home/runner/${{ env.TAR_NAME }}
 
-      # 💾 保存 last commit
+      # 💾 保存 last commit 到 artifact
       - name: 上传 last commit 记录
         if: steps.check_build.outputs.skip_build == 'false'
         uses: actions/upload-artifact@v4
         with:
           name: last-gst-decoders-commit
-          path: last_gst_commit.txt
+          path: ${{ env.LAST_COMMIT_FILE }}
           retention-days: 365
 
       # 🚀 发布到 Release
@@ -199,14 +182,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 💬 反馈结果
-      - name: 发布构建信息（PR/Commit）
-        if: steps.check_build.outputs.skip_build == 'false'
+      # 💬 发布构建信息（仅在 PR 上执行）
+      - name: 发布构建信息（PR）
+        if: steps.check_build.outputs.skip_build == 'false' && github.event.pull_request != null
         uses: peter-evans/create-or-update-comment@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          repository: ${{ github.repository }}
-          issue-number: ${{ github.event.pull_request.number || github.run_number }}
+          issue-number: ${{ github.event.pull_request.number }}
           body: |
             ✅ **GStreamer Decoders 构建完成**
             🔖 Commit: `${{ env.LATEST_COMMIT }}`
