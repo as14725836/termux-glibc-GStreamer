@@ -3,7 +3,7 @@ name: Build GStreamer Decoders (aarch64, Dev)
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 7 * * *'  # 每天早上7点自动检查更新构建
+    - cron: '0 7 * * *'  # 每天早上7点自动构建检查更新
   pull_request:
 
 permissions:
@@ -14,11 +14,11 @@ jobs:
     runs-on: ubuntu-24.04-arm
 
     steps:
-      # 🔹 检出 workflow 仓库
+      # 🧩 检出源码
       - name: 检出源码
         uses: actions/checkout@v4
 
-      # 🔹 安装基础依赖
+      # 📦 安装基础依赖
       - name: 安装基础依赖
         run: |
           sudo apt-get update
@@ -31,7 +31,7 @@ jobs:
             libtheora-dev libvpx-dev libx264-dev libx265-dev \
             libdav1d-dev libgav1-dev
 
-      # 🔹 升级 Meson 和 Ninja
+      # ⚙️ 升级 Meson 和 Ninja
       - name: 升级 Meson 和 Ninja 到最新版本
         run: |
           pip install --upgrade pip
@@ -39,8 +39,8 @@ jobs:
           meson --version
           ninja --version
 
-      # 🔹 克隆 GStreamer 源码并获取最新提交
-      - name: 克隆 GStreamer 源码（开发版本）
+      # 🧬 克隆 GStreamer 源码并记录最新提交
+      - name: 克隆 GStreamer 源码（开发分支）
         id: get_latest
         run: |
           git clone https://gitlab.freedesktop.org/gstreamer/gstreamer.git
@@ -48,18 +48,39 @@ jobs:
           git checkout main
           git pull origin main
           git submodule update --init --recursive
-          DEV_HASH=$(git rev-parse HEAD)
-          echo "LATEST_COMMIT=$DEV_HASH" >> $GITHUB_ENV
+          echo "LATEST_COMMIT=$(git rev-parse HEAD)" >> $GITHUB_ENV
 
-      # 🔹 下载上次构建提交记录
+      # 💾 智能检测 + 下载上次构建提交记录
+      - name: 检查是否存在上次构建提交记录
+        id: check_artifact
+        run: |
+          echo "🔍 正在检测是否存在上次构建的提交记录..."
+          ARTIFACT_API="https://api.github.com/repos/${{ github.repository }}/actions/artifacts"
+          RESPONSE=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$ARTIFACT_API")
+          if echo "$RESPONSE" | grep -q '"name": "last-gst-decoders-commit"'; then
+            echo "artifact_exists=true" >> $GITHUB_OUTPUT
+            echo "✅ 检测到上次构建的提交记录 artifact。"
+          else
+            echo "artifact_exists=false" >> $GITHUB_OUTPUT
+            echo "⚪ 未检测到上次构建记录（可能是首次运行）。"
+          fi
+
+      # ⬇️ 下载上次构建提交记录（如果存在）
       - name: 下载上次构建提交记录
-        id: download_last_commit
+        if: steps.check_artifact.outputs.artifact_exists == 'true'
         uses: actions/download-artifact@v4
         with:
           name: last-gst-decoders-commit
-          path: ./last_commit || true
+          path: ./last_commit
 
-      # 🔹 检查是否需要构建
+      # ⚪ 如果不存在则创建空目录避免后续报错
+      - name: 创建空 last_commit 目录
+        if: steps.check_artifact.outputs.artifact_exists == 'false'
+        run: |
+          mkdir -p ./last_commit
+          echo "none" > ./last_commit/last_gst_commit.txt
+
+      # 🔍 检查是否需要构建
       - name: 检查是否需要构建
         id: check_build
         run: |
@@ -70,26 +91,30 @@ jobs:
             LAST_COMMIT="none"
           fi
 
+          echo "上次构建 commit: $LAST_COMMIT"
+          echo "最新源码 commit: $LATEST_COMMIT"
+
           if [ "$LATEST_COMMIT" = "$LAST_COMMIT" ]; then
             echo "skip_build=true" >> $GITHUB_OUTPUT
           else
             echo "skip_build=false" >> $GITHUB_OUTPUT
           fi
 
-      # 🔹 跳过无更新构建
+      # ⏭️ 跳过无更新构建
       - name: 跳过无更新构建
         if: steps.check_build.outputs.skip_build == 'true'
         run: |
-          echo "🟡 无新提交，跳过构建流程。"
+          echo "🟡 无新提交，跳过构建。"
           exit 0
 
-      # 🔹 构建 GStreamer 开发解码器
-      - name: 构建 GStreamer 开发解码器
+      # 🛠️ 构建 GStreamer 解码器
+      - name: 构建 GStreamer 解码器
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
           cd gstreamer
           sudo mkdir -p /data/data/com.termux/files/usr/glibc
           sudo chmod -R 777 /data
+          echo "⚙️ Meson setup 开始..."
           meson setup build \
             --prefix=/data/data/com.termux/files/usr/glibc \
             --libdir=lib \
@@ -109,43 +134,39 @@ jobs:
             -Dgst-full=enabled \
             -Dgst-full-plugins='*' \
             --buildtype=release
+          echo "🏗️ 开始编译..."
           ninja -C build -j$(nproc)
+          echo "📦 安装到 glibc 目录..."
           ninja -C build install
 
-      # 🔹 对 glibc 下 ELF 文件应用 patchelf
+      # 🧩 修补 ELF
       - name: 修补 ELF 可执行文件
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
           INTERP=/data/data/com.termux/files/usr/glibc/lib/ld-linux-aarch64.so.1
           ROOT=/data/data/com.termux/files/usr/glibc
-          echo "✅ 修补 bin 目录..."
-          if [ -d "$ROOT/bin" ]; then
-            for f in "$ROOT/bin/"*; do
-              if file "$f" | grep -q 'ELF.*executable'; then
-                patchelf --set-interpreter "$INTERP" "$f" || true
-              fi
-            done
-          fi
-          echo "✅ 修补 lib/gstreamer1.0/gstreamer-1.0 目录..."
-          if [ -d "$ROOT/lib/gstreamer1.0/gstreamer-1.0" ]; then
-            for f in "$ROOT/lib/gstreamer1.0/gstreamer-1.0/"*; do
-              if file "$f" | grep -q 'ELF'; then
-                patchelf --set-interpreter "$INTERP" "$f" || true
-              fi
-            done
-          fi
+          for dir in "$ROOT/bin" "$ROOT/lib/gstreamer1.0/gstreamer-1.0"; do
+            if [ -d "$dir" ]; then
+              echo "🔧 修补目录: $dir"
+              for f in "$dir"/*; do
+                if file "$f" | grep -q 'ELF'; then
+                  patchelf --set-interpreter "$INTERP" "$f" || true
+                fi
+              done
+            fi
+          done
 
-      # 🔹 打包 glibc 文件夹
-      - name: 打包 glibc 文件夹（开发版本）
+      # 🧱 打包构建结果
+      - name: 打包 glibc 目录
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
           cd /data/data/com.termux/files/usr
           TAR_NAME="termux-glibc-gst-decoders-${LATEST_COMMIT:0:7}.tar.gz"
           tar -czvf /home/runner/${TAR_NAME} glibc
           echo "TAR_NAME=${TAR_NAME}" >> $GITHUB_ENV
-          echo "$LATEST_COMMIT" > ./last_gst_commit.txt
+          echo "$LATEST_COMMIT" > last_gst_commit.txt
 
-      # 🔹 上传构建产物
+      # ⬆️ 上传产物
       - name: 上传构建产物
         if: steps.check_build.outputs.skip_build == 'false'
         uses: actions/upload-artifact@v4
@@ -153,37 +174,33 @@ jobs:
           name: ${{ env.TAR_NAME }}
           path: /home/runner/${{ env.TAR_NAME }}
 
-      # 🔹 上传 last commit 记录
+      # 💾 保存 last commit
       - name: 上传 last commit 记录
         if: steps.check_build.outputs.skip_build == 'false'
         uses: actions/upload-artifact@v4
         with:
           name: last-gst-decoders-commit
           path: last_gst_commit.txt
+          retention-days: 365
 
-      # 🔹 发布到 GitHub Release
+      # 🚀 发布到 Release
       - name: 发布到 GitHub Release
         if: steps.check_build.outputs.skip_build == 'false'
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ env.TAR_NAME }}
-          name: GStreamer Decoders ${{ env.TAR_NAME }} (aarch64, Termux glibc)
+          name: "GStreamer Decoders ${{ env.TAR_NAME }} (aarch64, Termux glibc)"
+          body: |
+            ✅ 自动构建成功！
+
+            🔖 Commit: [${{ env.LATEST_COMMIT }}](https://gitlab.freedesktop.org/gstreamer/gstreamer/-/commit/${{ env.LATEST_COMMIT }})
+            📦 文件名: `${{ env.TAR_NAME }}`
           files: /home/runner/${{ env.TAR_NAME }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 🔹 输出构建结果
-      - name: 输出构建信息
-        if: steps.check_build.outputs.skip_build == 'false'
-        run: |
-          echo "✅ GStreamer 构建完成"
-          echo "🔖 版本号: ${LATEST_COMMIT:0:7}"
-          echo "📝 提交完整 hash: ${LATEST_COMMIT}"
-          echo "📦 打包文件: ${{ env.TAR_NAME }}"
-          ls -lh /home/runner/${{ env.TAR_NAME }}
-
-      # 🔹 在 PR 或 Commit 下发布构建信息（机器人）
-      - name: 在 PR 或 Commit 下发布构建信息
+      # 💬 反馈结果
+      - name: 发布构建信息（PR/Commit）
         if: steps.check_build.outputs.skip_build == 'false'
         uses: peter-evans/create-or-update-comment@v4
         with:
@@ -191,7 +208,6 @@ jobs:
           repository: ${{ github.repository }}
           issue-number: ${{ github.event.pull_request.number || github.run_number }}
           body: |
-            ✅ GStreamer Decoders 构建完成
-            🔖 版本号 (前7位 commit hash): ${LATEST_COMMIT:0:7}
-            📝 提交完整 hash: ${LATEST_COMMIT}
-            📦 打包文件: ${{ env.TAR_NAME }}
+            ✅ **GStreamer Decoders 构建完成**
+            🔖 Commit: `${{ env.LATEST_COMMIT }}`
+            📦 文件: `${{ env.TAR_NAME }}`
