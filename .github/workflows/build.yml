@@ -122,7 +122,7 @@ jobs:
             -Dlibexecdir=lib/gstreamer1.0 \
             -Dbase=enabled -Dgood=enabled -Dugly=enabled -Dbad=enabled \
             -Dlibav=enabled -Dgpl=enabled -Ddefault_library=shared \
-            -Dtests=disabled -Dopengl=disable -Dhip=disabled -Dnvcodec=disabled -Ddoc=disabled -Dexamples=disabled \
+            -Dtests=disabled -Dhip=disabled -Dnvcodec=disabled -Ddoc=disabled -Dexamples=disabled \
             -Dpython=disabled -Dintrospection=disabled \
             -Dgst-full=enabled -Dgst-full-plugins='*' \
             -Ddevtools=enabled -Drtsp_server=disabled \
