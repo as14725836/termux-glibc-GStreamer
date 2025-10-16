@@ -1,8 +1,8 @@
 name: Build GStreamer Decoders (aarch64, Dev)
 
 on:
-  workflow_dispatch:    # 手动触发
-  schedule:             # 可保留每日检查源码更新
+  workflow_dispatch:
+  schedule:
     - cron: '0 7 * * *'
   pull_request:
 
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 env:
-  LAST_COMMIT_FILE: last_gst_commit.txt
+  LAST_TAG_FILE: last_gst_tag.txt
   INSTALL_ROOT: /data/data/com.termux/files/usr/glibc
 
 jobs:
@@ -18,8 +18,8 @@ jobs:
     runs-on: ubuntu-24.04-arm
 
     steps:
-      # 🧩 检出源码
-      - name: 检出源码
+      # 🧩 检出当前仓库
+      - name: 检出 workflow 仓库
         uses: actions/checkout@v4
 
       # 📦 安装依赖
@@ -37,52 +37,66 @@ jobs:
           pip install --upgrade pip
           pip install --upgrade meson ninja
 
-      # 🧬 获取最新 commit
-      - name: 获取最新 GStreamer 提交
+      # 🧬 获取 GStreamer 最新标签、提交、作者
+      - name: 获取 GStreamer 最新信息
         id: get_latest
         run: |
           git clone https://gitlab.freedesktop.org/gstreamer/gstreamer.git
           cd gstreamer
-          git checkout main
-          git pull origin main
-          git submodule update --init --recursive
-          echo "LATEST_COMMIT=$(git rev-parse HEAD)" >> $GITHUB_ENV
+          git fetch --tags
+          LATEST_TAG=$(git describe --tags $(git rev-list --tags --max-count=1))
+          CLEAN_TAG=$(echo "$LATEST_TAG" | sed 's/^v//')
+          LATEST_COMMIT=$(git rev-list -n 1 "$LATEST_TAG")
+          AUTHOR=$(git log -1 --pretty=format:'%an')
+          DATE=$(date -u '+%Y-%m-%d %H:%M UTC')
+          echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_ENV
+          echo "CLEAN_TAG=$CLEAN_TAG" >> $GITHUB_ENV
+          echo "LATEST_COMMIT=$LATEST_COMMIT" >> $GITHUB_ENV
+          echo "AUTHOR=$AUTHOR" >> $GITHUB_ENV
+          echo "BUILD_DATE=$DATE" >> $GITHUB_ENV
+          echo "🆕 最新标签: $LATEST_TAG"
+          echo "🧬 最新提交: $LATEST_COMMIT"
+          echo "👤 作者: $AUTHOR"
+          echo "🕓 构建时间: $DATE"
 
-      # 💾 获取上次构建 commit
-      - name: 获取上次构建 commit
+      # 💾 获取上次构建标签
+      - name: 获取上次构建标签
         id: get_last
         run: |
-          FILE=${{ env.LAST_COMMIT_FILE }}
+          FILE=${{ env.LAST_TAG_FILE }}
           if [ -f "$FILE" ]; then
-            LAST_COMMIT=$(cat "$FILE")
+            LAST_TAG=$(cat "$FILE")
           else
             echo "none" > "$FILE"
-            LAST_COMMIT="none"
+            LAST_TAG="none"
           fi
-          echo "LAST_COMMIT=$LAST_COMMIT" >> $GITHUB_ENV
+          echo "LAST_TAG=$LAST_TAG" >> $GITHUB_ENV
+          echo "📦 上次构建标签: $LAST_TAG"
 
       # 🔍 判断是否需要构建
       - name: 判断是否需要构建
         id: check_build
         run: |
-          if [ "$LATEST_COMMIT" = "$LAST_COMMIT" ]; then
+          if [ "$LATEST_TAG" = "$LAST_TAG" ]; then
             echo "skip_build=true" >> $GITHUB_OUTPUT
+            echo "🟡 标签未更新，跳过构建。"
           else
             echo "skip_build=false" >> $GITHUB_OUTPUT
+            echo "✅ 发现新版本: $LATEST_TAG"
           fi
 
       # ⏭️ 跳过无更新构建
       - name: 跳过无更新构建
         if: steps.check_build.outputs.skip_build == 'true'
-        run: |
-          echo "🟡 无新提交，跳过构建。"
-          exit 0
+        run: exit 0
 
       # 🛠️ 构建 GStreamer 解码器
       - name: 构建 GStreamer 解码器
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
           cd gstreamer
+          git checkout "$LATEST_TAG"
+          git submodule update --init --recursive
           sudo mkdir -p $INSTALL_ROOT
           sudo chmod -R 777 /data
           echo "⚙️ Meson setup..."
@@ -96,9 +110,9 @@ jobs:
             -Dpython=disabled -Dintrospection=disabled \
             -Dgst-full=enabled -Dgst-full-plugins='*' \
             --buildtype=release
-          echo "🏗️ 编译..."
+          echo "🏗️ 编译中..."
           ninja -C build -j$(nproc)
-          echo "📦 安装..."
+          echo "📦 安装中..."
           ninja -C build install
 
       # 🧩 修补 ELF
@@ -122,10 +136,11 @@ jobs:
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
           cd /data/data/com.termux/files/usr
-          TAR_NAME="termux-glibc-gst-decoders-${LATEST_COMMIT:0:7}.tar.gz"
+          TAR_NAME="termux-glibc-gst-decoders-${CLEAN_TAG}.tar.gz"
           tar -czvf /home/runner/$TAR_NAME glibc
           echo "TAR_NAME=$TAR_NAME" >> $GITHUB_ENV
-          echo "$LATEST_COMMIT" > ${{ env.LAST_COMMIT_FILE }}
+          echo "$LATEST_TAG" > ${{ env.LAST_TAG_FILE }}
+          echo "✅ 打包完成: $TAR_NAME"
 
       # ⬆️ 上传构建产物
       - name: 上传构建产物
@@ -135,26 +150,29 @@ jobs:
           name: ${{ env.TAR_NAME }}
           path: /home/runner/${{ env.TAR_NAME }}
 
-      # 💾 上传 last commit
-      - name: 上传 last commit 记录
+      # 💾 上传 last tag
+      - name: 上传 last tag 记录
         if: steps.check_build.outputs.skip_build == 'false'
         uses: actions/upload-artifact@v4
         with:
-          name: last-gst-decoders-commit
-          path: ${{ env.LAST_COMMIT_FILE }}
+          name: last-gst-decoders-tag
+          path: ${{ env.LAST_TAG_FILE }}
           retention-days: 365
 
-      # 🚀 发布到 Release（可选）
+      # 🚀 发布到 GitHub Release
       - name: 发布到 GitHub Release
         if: steps.check_build.outputs.skip_build == 'false'
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ env.TAR_NAME }}
-          name: "GStreamer Decoders ${{ env.TAR_NAME }} (aarch64, Termux glibc)"
+          tag_name: ${{ env.LATEST_TAG }}
+          name: "GStreamer Decoders ${{ env.CLEAN_TAG }} (aarch64, Termux glibc)"
           body: |
-            ✅ 自动构建成功！
-            🔖 Commit: [${{ env.LATEST_COMMIT }}](https://gitlab.freedesktop.org/gstreamer/gstreamer/-/commit/${{ env.LATEST_COMMIT }})
-            📦 文件名: `${{ env.TAR_NAME }}`
+            ✅ **自动构建成功！**
+            🕓 **构建时间：** ${{ env.BUILD_DATE }}
+            🏷️ **标签版本：** [${{ env.LATEST_TAG }}](https://gitlab.freedesktop.org/gstreamer/gstreamer/-/tags/${{ env.LATEST_TAG }})
+            🧬 **最新提交：** [${{ env.LATEST_COMMIT }}](https://gitlab.freedesktop.org/gstreamer/gstreamer/-/commit/${{ env.LATEST_COMMIT }})
+            👤 **提交作者：** ${{ env.AUTHOR }}
+            📦 **构建产物：** `${{ env.TAR_NAME }}`
           files: /home/runner/${{ env.TAR_NAME }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
