@@ -191,7 +191,7 @@ jobs:
           cd /data/data/com.termux/files/usr
           TAR_NAME="termux-glibc-gst-decoders-${VERSION}.tar.gz"
           echo "📦 打包: $TAR_NAME"
-          tar -czvf /home/runner/$TAR_NAME glibc meson-setup.log ninja-build.log ninja-install.log
+          tar -czvf /home/runner/$TAR_NAME glibc
           echo "TAR_NAME=$TAR_NAME" >> $GITHUB_ENV
           echo "$LATEST_COMMIT" > ${{ env.LAST_COMMIT_FILE }}
           echo "✅ 打包完成: $TAR_NAME"
