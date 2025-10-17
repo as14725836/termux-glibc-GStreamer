@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 env:
   LAST_COMMIT_FILE: last_gst_commit.txt
@@ -117,7 +118,7 @@ jobs:
             -Dbase=enabled -Dgood=enabled -Dugly=enabled -Dbad=enabled \
             -Dlibav=enabled -Dgpl=disabled -Ddefault_library=shared \
             -Dtests=disabled -Ddoc=disabled -Dexamples=disabled \
-            -Dpython=disabled -Dgst-plugins-bad:hip=disabled -Dgst-plugins-bad:nvcodec=disabled -Dgst-plugins-base:gl=disabled -Dintrospection=disabled \
+            -Dpython=disabled -Dgst-plugins-bad:aom=enabled -Dgst-plugins-bad:dav1d=enabled -Dgst-plugins-bad:hip=disabled -Dgst-plugins-bad:nvcodec=disabled -Dgst-plugins-base:gl=disabled -Dintrospection=disabled \
             -Dgst-full=enabled -Dgst-full-plugins='*' \
             -Ddevtools=enabled -Drtsp_server=disabled \
             --buildtype=release
