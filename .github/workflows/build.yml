@@ -53,13 +53,7 @@ jobs:
           DATE=$(date -u '+%Y-%m-%d %H:%M UTC')
           COMMIT_DATE=$(git log -1 --pretty=format:'%cd' --date=short)
           
-          # 尝试获取最近的标签作为版本参考
-          if git describe --tags --abbrev=0 >/dev/null 2>&1; then
-            BASE_TAG=$(git describe --tags --abbrev=0)
-            VERSION="${BASE_TAG}-dev-${COMMIT_SHORT}"
-          else
-            VERSION="dev-${COMMIT_SHORT}"
-          fi
+          version=$(sed -n '2p' "meson.build" | grep -oP "version\s*:\s*'\K[^']+")
           
           echo "LATEST_COMMIT=$LATEST_COMMIT" >> $GITHUB_ENV
           echo "COMMIT_SHORT=$COMMIT_SHORT" >> $GITHUB_ENV
