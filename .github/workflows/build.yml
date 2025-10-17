@@ -30,7 +30,7 @@ jobs:
           sudo apt-get install -y build-essential python3-pip git pkg-config \
             libglib2.0-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
             liborc-0.4-dev libxv-dev libx11-dev libasound2-dev libpulse-dev patchelf \
-            libtheora-dev libvpx-dev libx264-dev libx265-dev libdav1d-dev libgav1-dev
+            libtheora-dev libmpg123-dev libvpx-dev libx264-dev libx265-dev libdav1d-dev libgav1-dev
 
       # ⚙️ 升级 Meson 和 Ninja
       - name: 升级 Meson 和 Ninja
