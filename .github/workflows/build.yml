@@ -53,9 +53,7 @@ jobs:
           AUTHOR=$(git log -1 --pretty=format:'%an')
           DATE=$(date -u '+%Y-%m-%d %H:%M UTC')
           COMMIT_DATE=$(git log -1 --pretty=format:'%cd' --date=short)
-          
           VERSION=$(sed -n '2p' "meson.build" | grep -oP "version\s*:\s*'\K[^']+")
-          
           echo "LATEST_COMMIT=$LATEST_COMMIT" >> $GITHUB_ENV
           echo "COMMIT_SHORT=$COMMIT_SHORT" >> $GITHUB_ENV
           echo "VERSION=$VERSION" >> $GITHUB_ENV
@@ -64,9 +62,6 @@ jobs:
           echo "COMMIT_DATE=$COMMIT_DATE" >> $GITHUB_ENV
           echo "🆕 开发版本: $VERSION"
           echo "🧬 最新提交: $LATEST_COMMIT"
-          echo "📅 提交日期: $COMMIT_DATE"
-          echo "👤 作者: $AUTHOR"
-          echo "🕓 构建时间: $DATE"
 
       # 💾 获取上次构建提交
       - name: 获取上次构建提交
@@ -118,16 +113,59 @@ jobs:
             -Dbase=enabled -Dgood=enabled -Dugly=enabled -Dbad=enabled \
             -Dlibav=enabled -Dgpl=disabled -Ddefault_library=shared \
             -Dtests=disabled -Ddoc=disabled -Dexamples=disabled \
-            -Dpython=disabled -Dgst-plugins-bad:hip=disabled -Dgst-plugins-bad:nvcodec=disabled -Dgst-plugins-base:gl=disabled -Dintrospection=disabled \
+            -Dpython=disabled -Dintrospection=disabled \
             -Dgst-full=enabled -Dgst-full-plugins='*' \
             -Ddevtools=enabled -Drtsp_server=disabled \
-            --buildtype=release
+            -Dgst-plugins-bad:hip=disabled -Dgst-plugins-bad:nvcodec=disabled -Dgst-plugins-base:gl=disabled \
+            \
+            -Dgstreamer:check=disabled \
+            -Dgstreamer:benchmarks=disabled \
+            -Dgstreamer:libunwind=disabled \
+            -Dgstreamer:libdw=disabled \
+            -Dgstreamer:bash-completion=disabled \
+            -Dgst-plugins-good:cairo=disabled \
+            -Dgst-plugins-good:gdk-pixbuf=disabled \
+            -Dgst-plugins-good:oss=disabled \
+            -Dgst-plugins-good:oss4=disabled \
+            -Dgst-plugins-good:v4l2=disabled \
+            -Dgst-plugins-good:aalib=disabled \
+            -Dgst-plugins-good:jack=disabled \
+            -Dgst-plugins-good:pulse=enabled \
+            -Dgst-plugins-good:adaptivedemux2=disabled \
+            -Dgst-plugins-good:libcaca=disabled \
+            -Dgst-plugins-good:mpg123=enabled \
+            -Dgst-plugins-base:examples=disabled \
+            -Dgst-plugins-base:alsa=enabled \
+            -Dgst-plugins-base:pango=disabled \
+            -Dgst-plugins-base:x11=enabled \
+            -Dgst-plugins-base:gl_winsys=x11 \
+            -Dgst-plugins-bad:gpl=enabled \
+            -Dgst-plugins-bad:androidmedia=disabled \
+            -Dgst-plugins-bad:rtmp=disabled \
+            -Dgst-plugins-bad:shm=disabled \
+            -Dgst-plugins-bad:zbar=disabled \
+            -Dgst-plugins-bad:webp=disabled \
+            -Dgst-plugins-bad:hls-crypto=openssl \
+            -Dgst-plugins-bad:kms=disabled \
+            -Dgst-plugins-bad:vulkan=enabled \
+            -Dgst-plugins-bad:vulkan-windowing=x11 \
+            -Dgst-plugins-bad:vulkan-video=enabled \
+            -Dgst-plugins-bad:dash=disabled \
+            -Dgst-plugins-bad:analyticsoverlay=disabled \
+            -Dgst-plugins-bad:uvch264=disabled \
+            -Dgst-plugins-bad:v4l2codecs=disabled \
+            -Dgst-plugins-bad:udev=disabled \
+            -Dgst-plugins-bad:libde265=enabled \
+            -Dgst-plugins-bad:smoothstreaming=disabled \
+            -Dgst-plugins-bad:fluidsynth=disabled \
+            -Dgst-plugins-bad:inter=disabled \
+            --buildtype=release 2>&1 | tee ../meson-setup.log
           
           echo "🏗️ 编译中..."
-          ninja -C build -j$(nproc)
+          ninja -C build -j$(nproc) 2>&1 | tee ../ninja-build.log
           
           echo "📦 安装中..."
-          ninja -C build install
+          ninja -C build install 2>&1 | tee ../ninja-install.log
           
           echo "✅ GStreamer 开发版本构建完成"
 
@@ -137,30 +175,14 @@ jobs:
         run: |
           INTERP=$INSTALL_ROOT/lib/ld-linux-aarch64.so.1
           echo "🔧 修补 ELF 解释器: $INTERP"
-          
-          # 修补二进制文件
-          if [ -d "$INSTALL_ROOT/bin" ]; then
-            echo "📁 修补 bin 目录..."
-            find "$INSTALL_ROOT/bin" -type f -exec file {} \; | grep 'ELF' | cut -d: -f1 | while read f; do
-              patchelf --set-interpreter "$INTERP" "$f" 2>/dev/null || true
-            done
-          fi
-          
-          # 修补库文件
-          if [ -d "$INSTALL_ROOT/lib" ]; then
-            echo "📁 修补 lib 目录..."
-            find "$INSTALL_ROOT/lib" -name "*.so*" -type f -exec file {} \; | grep 'ELF' | cut -d: -f1 | while read f; do
-              patchelf --set-interpreter "$INTERP" "$f" 2>/dev/null || true
-            done
-          fi
-          
-          # 修补 GStreamer 插件
-          if [ -d "$INSTALL_ROOT/lib/gstreamer1.0" ]; then
-            echo "📁 修补 GStreamer 插件目录..."
-            find "$INSTALL_ROOT/lib/gstreamer1.0" -name "*.so" -type f -exec file {} \; | grep 'ELF' | cut -d: -f1 | while read f; do
-              patchelf --set-interpreter "$INTERP" "$f" 2>/dev/null || true
-            done
-          fi
+          for dir in "$INSTALL_ROOT/bin" "$INSTALL_ROOT/lib" "$INSTALL_ROOT/lib/gstreamer1.0"; do
+            [ -d "$dir" ] || continue
+            echo "📁 修补目录: $dir"
+            find "$dir" -type f -exec file {} \; | grep 'ELF' | cut -d: -f1 | \
+              while read f; do
+                patchelf --set-interpreter "$INTERP" "$f" 2>/dev/null || true
+              done
+          done
 
       # 🧱 打包构建结果
       - name: 打包 glibc 目录
@@ -169,10 +191,8 @@ jobs:
           cd /data/data/com.termux/files/usr
           TAR_NAME="termux-glibc-gst-decoders-${VERSION}.tar.gz"
           echo "📦 打包: $TAR_NAME"
-          tar -czvf /home/runner/$TAR_NAME glibc
+          tar -czvf /home/runner/$TAR_NAME glibc meson-setup.log ninja-build.log ninja-install.log
           echo "TAR_NAME=$TAR_NAME" >> $GITHUB_ENV
-          
-          # 保存当前提交记录
           echo "$LATEST_COMMIT" > ${{ env.LAST_COMMIT_FILE }}
           echo "✅ 打包完成: $TAR_NAME"
 
@@ -213,29 +233,25 @@ jobs:
             - **构建时间**: `${{ env.BUILD_DATE }}`
             
             ### 🛠️ 构建特性
-            - ✅ **基础插件** (base)
-            - ✅ **优质插件** (good) 
-            - ✅ **丑陋插件** (ugly)
-            - ✅ **不良插件** (bad)
-            - ✅ **LibAV 支持**
-            - ✅ **GPL 插件**
-            - ✅ **开发工具**
-            - ❌ **RTSP 服务器** (已禁用)
-            - 🏗️ **构建类型**: release
+            - ✅ base / good / ugly / bad / libav / devtools
+            - ✅ Vulkan 解码支持
+            - ✅ ALSA / PulseAudio 音频支持
+            - ❌ 无 RTSP / 无 AndroidMedia / 无 Docs / 无 Tests
             
             ### 📦 文件信息
             - **文件名**: `${{ env.TAR_NAME }}`
-            - **包含**: 完整的 GStreamer 开发版本安装
+            - **包含**: 完整 GStreamer 安装 + 日志
             
             ### ⚠️ 注意事项
-            - 此为开发版本，可能包含未稳定的特性
-            - 建议仅用于测试和开发目的
-            - 生产环境请使用稳定版本
+            - 此为开发版本，可能包含不稳定特性
+            - 建议仅用于测试或开发用途
             
             ### 📥 使用方法
-            1. 下载并解压到 Termux 的 `/data/data/com.termux/files/usr/` 目录
-            2. 设置环境变量: `export GST_PLUGIN_PATH=/data/data/com.termux/files/usr/glibc/lib/gstreamer1.0`
-            3. 测试: `gst-inspect-1.0 --version`
+            ```bash
+            tar -xvf termux-glibc-gst-decoders-*.tar.gz -C /data/data/com.termux/files/usr/
+            export GST_PLUGIN_PATH=/data/data/com.termux/files/usr/glibc/lib/gstreamer1.0
+            gst-inspect-1.0 --version
+            ```
           files: /home/runner/${{ env.TAR_NAME }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
