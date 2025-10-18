@@ -147,9 +147,7 @@ jobs:
             -Dgst-plugins-bad:webp=disabled \
             -Dgst-plugins-bad:hls-crypto=openssl \
             -Dgst-plugins-bad:kms=disabled \
-            -Dgst-plugins-bad:vulkan=enabled \
-            -Dgst-plugins-bad:vulkan-windowing=x11 \
-            -Dgst-plugins-bad:vulkan-video=enabled \
+            -Dgst-plugins-bad:vulkan=disabled \
             -Dgst-plugins-bad:dash=disabled \
             -Dgst-plugins-bad:analyticsoverlay=disabled \
             -Dgst-plugins-bad:uvch264=disabled \
