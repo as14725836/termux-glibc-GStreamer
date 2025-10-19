@@ -126,7 +126,7 @@ jobs:
             --prefix=${{ env.INSTALL_ROOT }} \
             --libdir=lib \
             --buildtype=release \
-            -Dbitdepths=[8,16] \
+            -Dbitdepths=8,16 \
             -Denable_tools=false \
             -Denable_examples=false \
             -Denable_tests=false \
@@ -143,7 +143,7 @@ jobs:
           sudo cp ${{ env.INSTALL_ROOT }}/lib/libdav1d.so* ${{ env.INSTALL_ROOT }}/lib/gstreamer-1.0/ || true
           echo "✅ dav1d v1.4.3 构建完成并安装"
 
-      # 🛠️ 构建 GStreamer 解码器
+      # 🛠️ 构建 GStreamer 解码器具
       - name: 构建 GStreamer 解码器
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
