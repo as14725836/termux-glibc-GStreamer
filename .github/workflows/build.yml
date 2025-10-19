@@ -116,7 +116,7 @@ jobs:
             --prefix=${{ env.INSTALL_ROOT }} \
             --libdir=lib \
             --buildtype=release \
-            -Dbitdepths="8","16" \
+            -Dbitdepths=8,16 \
             -Denable_tools=false \
             -Denable_examples=false \
             -Denable_tests=false \
