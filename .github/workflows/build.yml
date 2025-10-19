@@ -1,4 +1,4 @@
-name: Build GStreamer Decoders (aarch64, Dev + libvpx + dav1d)
+name: Build GStreamer Decoders (aarch64, Dev + libvpx)
 
 on:
   workflow_dispatch:
@@ -19,26 +19,28 @@ jobs:
     runs-on: ubuntu-24.04-arm
 
     steps:
+      # 🧩 检出 workflow 仓库
       - name: 检出 workflow 仓库
         uses: actions/checkout@v4
 
+      # 📦 安装基础依赖
       - name: 安装基础依赖
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential python3-pip git pkg-config nasm \
-            libglib2.0-dev libgstreamer1.0-dev meson libgstreamer-plugins-base1.0-dev \
+            libglib2.0-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
             liborc-0.4-dev libxv-dev libx11-dev libasound2-dev libpulse-dev patchelf \
             libtheora-dev libx264-dev libx265-dev libvpx-dev
-
+      # ⚙️ 升级 Meson 和 Ninja
       - name: 升级 Meson 和 Ninja
         run: |
           pip install --upgrade pip
           pip install --upgrade meson ninja
-
+      # 🧬 克隆 GStreamer 开发版本
       - name: 克隆 GStreamer 开发版本
         run: |
           git clone --depth=1 https://gitlab.freedesktop.org/gstreamer/gstreamer.git
-
+      # 🔍 获取开发版本信息
       - name: 获取开发版本信息
         id: get_dev_info
         run: |
@@ -55,7 +57,7 @@ jobs:
           echo "AUTHOR=$AUTHOR" >> $GITHUB_ENV
           echo "BUILD_DATE=$DATE" >> $GITHUB_ENV
           echo "COMMIT_DATE=$COMMIT_DATE" >> $GITHUB_ENV
-
+      # 💾 获取上次构建提交
       - name: 获取上次构建提交
         id: get_last_commit
         run: |
@@ -67,7 +69,7 @@ jobs:
             LAST_COMMIT="none"
           fi
           echo "LAST_COMMIT=$LAST_COMMIT" >> $GITHUB_ENV
-
+      # 🔍 判断是否需要构建
       - name: 判断是否需要构建
         id: check_build
         run: |
@@ -78,11 +80,12 @@ jobs:
             echo "skip_build=false" >> $GITHUB_OUTPUT
             echo "✅ 发现新提交: $LATEST_COMMIT"
           fi
-
+      # ⏭️ 跳过无更新构建
       - name: 跳过无更新构建
         if: steps.check_build.outputs.skip_build == 'true'
         run: exit 0
 
+      # 🧱 构建 libvpx v1.14.0
       - name: 构建 libvpx v1.14.0
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
@@ -102,36 +105,10 @@ jobs:
             --disable-examples \
             --disable-docs
           make -j$(nproc)
+          sudo mkdir -p ${{ env.INSTALL_ROOT }}/lib/gstreamer-1.0
           sudo make install
-          echo "✅ libvpx v1.14.0 构建完成并安装到 ${{ env.INSTALL_ROOT }}/lib"
-
-      - name: 构建 dav1d v1.4.2 (8+16bit)
-        if: steps.check_build.outputs.skip_build == 'false'
-        run: |
-          echo "📦 构建 dav1d v1.4.2..."
-          git clone --depth=1 https://code.videolan.org/videolan/dav1d.git
-          cd dav1d
-          rm -rf build
-          meson setup build \
-            --prefix=${{ env.INSTALL_ROOT }} \
-            --libdir=lib \
-            --buildtype=release \
-            -Dbitdepths=8,16 \
-            -Denable_tools=false \
-            -Denable_examples=false \
-            -Denable_tests=false \
-            -Denable_seek_stress=false \
-            -Denable_docs=false \
-            -Dlogging=false \
-            -Dtestdata_tests=false \
-            -Dfuzzing_engine=none \
-            -Dtrim_dsp=if-release \
-            -Dxxhash_muxer=auto \
-            -Dmacos_kperf=false
-          ninja -C build -j$(nproc)
-          sudo ninja -C build install
-          echo "✅ dav1d v1.4.2 构建完成并安装到 ${{ env.INSTALL_ROOT }}/lib"
-
+          echo "✅ libvpx v1.14.0 构建完成并安装到 GStreamer 插件目录"
+      # 🛠️ 构建 GStreamer 解码器
       - name: 构建 GStreamer 解码器
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
@@ -146,7 +123,6 @@ jobs:
             -Dlibav=enabled -Dgpl=disabled -Ddefault_library=shared \
             -Dtests=disabled -Ddoc=disabled -Dexamples=disabled \
             -Dpython=disabled -Dgst-plugins-good:vpx=enabled \
-            -Dgst-plugins-bad:dav1d=enabled \
             -Dgst-plugins-bad:hip=disabled -Dgst-plugins-bad:nvcodec=disabled \
             -Dgst-plugins-base:gl=disabled -Dintrospection=disabled \
             -Dgst-full=enabled -Dgst-full-plugins='*' \
@@ -154,7 +130,7 @@ jobs:
             --buildtype=release
           ninja -C build -j$(nproc)
           ninja -C build install
-
+      # 🧩 修补 ELF 解释器
       - name: 修补 ELF 可执行文件
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
@@ -168,7 +144,7 @@ jobs:
               done
             fi
           done
-
+      # 🧱 打包构建结果
       - name: 打包 glibc 目录
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
@@ -177,7 +153,7 @@ jobs:
           tar -czvf /home/runner/$TAR_NAME glibc
           echo "$LATEST_COMMIT" > ${{ env.LAST_COMMIT_FILE }}
           echo "TAR_NAME=$TAR_NAME" >> $GITHUB_ENV
-
+      # ⬆️ 上传构建产物
       - name: 上传构建产物
         if: steps.check_build.outputs.skip_build == 'false'
         uses: actions/upload-artifact@v4
@@ -185,6 +161,7 @@ jobs:
           name: ${{ env.TAR_NAME }}
           path: /home/runner/${{ env.TAR_NAME }}
 
+      # 💾 上传提交记录
       - name: 上传提交记录
         if: steps.check_build.outputs.skip_build == 'false'
         uses: actions/upload-artifact@v4
@@ -193,6 +170,7 @@ jobs:
           path: ${{ env.LAST_COMMIT_FILE }}
           retention-days: 365
 
+      # 🚀 发布到 GitHub Release（整合详细信息）
       - name: 发布到 GitHub Release
         if: steps.check_build.outputs.skip_build == 'false'
         uses: softprops/action-gh-release@v1
@@ -213,11 +191,10 @@ jobs:
             
             ### 🛠️ 构建特性
             - ✅ **基础插件** (base)
-            - ✅ **优质插件** (good)
+            - ✅ **优质插件** (good) 
             - ✅ **丑陋插件** (ugly)
             - ✅ **不良插件** (bad)
             - ✅ **LibAV 支持**
-            - ✅ **dav1d (AV1) 解码支持**
             - ✅ **GPL 插件**
             - ✅ **开发工具**
             - ❌ **RTSP 服务器** (已禁用)
@@ -225,14 +202,17 @@ jobs:
             
             ### 📦 文件信息
             - **文件名**: `${{ env.TAR_NAME }}`
-            - **包含**: 完整的 GStreamer + libvpx + dav1d 解码器构建
+            - **包含**: 完整的 GStreamer 开发版本安装
+            
+            ### ⚠️ 注意事项
+            - 此为开发版本，可能包含未稳定的特性
+            - 建议仅用于测试和开发目的
+            - 生产环境请使用稳定版本
             
             ### 📥 使用方法
             1. 下载并解压到 Termux 的 `/data/data/com.termux/files/usr/` 目录
-            2. 设置环境变量:  
-               `export GST_PLUGIN_PATH=/data/data/com.termux/files/usr/glibc/lib`
-            3. 测试:  
-               `gst-inspect-1.0 av1dec`
+            2. 设置环境变量: `export GST_PLUGIN_PATH=/data/data/com.termux/files/usr/glibc/lib/gstreamer-1.0`
+            3. 测试: `gst-inspect-1.0 --version`
           files: /home/runner/${{ env.TAR_NAME }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
