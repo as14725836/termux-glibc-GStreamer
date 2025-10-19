@@ -101,7 +101,7 @@ jobs:
           git checkout v1.14.0
           ./configure \
             --prefix=${{ env.INSTALL_ROOT }} \
-            --libdir=${{ env.INSTALL_ROOT }}/lib/gstreamer-1.0 \
+            --libdir=${{ env.INSTALL_ROOT }}/lib \
             --enable-shared \
             --enable-vp8 \
             --enable-vp9 \
