@@ -28,7 +28,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential python3-pip git pkg-config nasm \
-            libglib2.0-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            libglib2.0-dev libgstreamer1.0-dev meson libgstreamer-plugins-base1.0-dev \
             liborc-0.4-dev libxv-dev libx11-dev libasound2-dev libpulse-dev patchelf \
             libtheora-dev libx264-dev libx265-dev libvpx-dev
 
