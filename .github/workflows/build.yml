@@ -1,4 +1,4 @@
-name: Build GStreamer Decoders (aarch64, Dev)
+name: Build GStreamer Decoders (aarch64, Dev + libvpx + libdav1d)
 
 on:
   workflow_dispatch:
@@ -19,27 +19,30 @@ jobs:
     runs-on: ubuntu-24.04-arm
 
     steps:
-      # 🧩 检出当前仓库
+      # 🧩 检出 workflow 仓库
       - name: 检出 workflow 仓库
         uses: actions/checkout@v4
 
-      # 📦 安装依赖
+      # 📦 安装基础依赖
       - name: 安装基础依赖
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential python3-pip git pkg-config \
+          sudo apt-get install -y build-essential python3-pip git pkg-config nasm \
             libglib2.0-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
             liborc-0.4-dev libxv-dev libx11-dev libasound2-dev libpulse-dev patchelf \
-            libtheora-dev libvpx-dev libx264-dev libx265-dev libdav1d-dev libgav1-dev
+            libtheora-dev libx264-dev libx265-dev libdav1d-dev libgav1-dev
+
       # ⚙️ 升级 Meson 和 Ninja
       - name: 升级 Meson 和 Ninja
         run: |
           pip install --upgrade pip
           pip install --upgrade meson ninja
+
       # 🧬 克隆 GStreamer 开发版本
       - name: 克隆 GStreamer 开发版本
         run: |
           git clone --depth=1 https://gitlab.freedesktop.org/gstreamer/gstreamer.git
+
       # 🔍 获取开发版本信息
       - name: 获取开发版本信息
         id: get_dev_info
@@ -50,20 +53,14 @@ jobs:
           AUTHOR=$(git log -1 --pretty=format:'%an')
           DATE=$(date -u '+%Y-%m-%d %H:%M UTC')
           COMMIT_DATE=$(git log -1 --pretty=format:'%cd' --date=short)
-          
-          VERSION=$(sed -n '2p' "meson.build" | grep -oP "version\s*:\s*'\K[^']+")
-          
+          VERSION=$(sed -n '2p' "meson.build" | grep -oP "version\\s*:\\s*'\\K[^']+")
           echo "LATEST_COMMIT=$LATEST_COMMIT" >> $GITHUB_ENV
           echo "COMMIT_SHORT=$COMMIT_SHORT" >> $GITHUB_ENV
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "AUTHOR=$AUTHOR" >> $GITHUB_ENV
           echo "BUILD_DATE=$DATE" >> $GITHUB_ENV
           echo "COMMIT_DATE=$COMMIT_DATE" >> $GITHUB_ENV
-          echo "🆕 开发版本: $VERSION"
-          echo "🧬 最新提交: $LATEST_COMMIT"
-          echo "📅 提交日期: $COMMIT_DATE"
-          echo "👤 作者: $AUTHOR"
-          echo "🕓 构建时间: $DATE"
+
       # 💾 获取上次构建提交
       - name: 获取上次构建提交
         id: get_last_commit
@@ -76,7 +73,7 @@ jobs:
             LAST_COMMIT="none"
           fi
           echo "LAST_COMMIT=$LAST_COMMIT" >> $GITHUB_ENV
-          echo "📦 上次构建提交: $LAST_COMMIT"
+
       # 🔍 判断是否需要构建
       - name: 判断是否需要构建
         id: check_build
@@ -88,85 +85,96 @@ jobs:
             echo "skip_build=false" >> $GITHUB_OUTPUT
             echo "✅ 发现新提交: $LATEST_COMMIT"
           fi
+
       # ⏭️ 跳过无更新构建
       - name: 跳过无更新构建
         if: steps.check_build.outputs.skip_build == 'true'
         run: exit 0
 
-      # 🛠️ 构建 GStreamer 解码器（开发版本）
+      # 🧱 构建 libvpx v1.14.0
+      - name: 构建 libvpx v1.14.0
+        if: steps.check_build.outputs.skip_build == 'false'
+        run: |
+          echo "📦 构建 libvpx v1.14.0..."
+          git clone https://chromium.googlesource.com/webm/libvpx
+          cd libvpx
+          git checkout v1.14.0
+          ./configure \
+            --prefix=${{ env.INSTALL_ROOT }} \
+            --libdir=${{ env.INSTALL_ROOT }}/lib/gstreamer-1.0 \
+            --enable-shared \
+            --enable-vp8 \
+            --enable-vp9 \
+            --enable-runtime-cpu-detect \
+            --target=arm64-linux-gcc \
+            --as=nasm \
+            --disable-examples \
+            --disable-docs
+          make -j$(nproc)
+          sudo mkdir -p ${{ env.INSTALL_ROOT }}/lib/gstreamer-1.0
+          sudo make install
+          echo "✅ libvpx v1.14.0 构建完成并安装到 GStreamer 插件目录"
+
+      # 🧱 构建 libdav1d（AV1 解码库）
+      - name: 构建 libdav1d
+        if: steps.check_build.outputs.skip_build == 'false'
+        run: |
+          echo "📦 构建 libdav1d..."
+          git clone --depth=1 https://code.videolan.org/videolan/libdav1d.git
+          cd libdav1d
+          meson setup build --prefix=${{ env.INSTALL_ROOT }} --libdir=${{ env.INSTALL_ROOT }}/lib/gstreamer-1.0 --buildtype=release
+          ninja -C build -j$(nproc)
+          sudo ninja -C build install
+          echo "✅ libdav1d 构建完成并安装到 GStreamer 插件目录"
+
+      # 🛠️ 构建 GStreamer 解码器
       - name: 构建 GStreamer 解码器
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
           cd gstreamer
-          echo "🔄 更新子模块..."
           git submodule update --init --recursive
-          
           sudo mkdir -p $INSTALL_ROOT
           sudo chmod -R 777 /data
-          
-          echo "⚙️ 配置构建系统..."
           meson setup build \
             --prefix=$INSTALL_ROOT \
             --libdir=lib \
-            -Dlibexecdir=lib/gstreamer1.0 \
             -Dbase=enabled -Dgood=enabled -Dugly=enabled -Dbad=enabled \
             -Dlibav=enabled -Dgpl=disabled -Ddefault_library=shared \
             -Dtests=disabled -Ddoc=disabled -Dexamples=disabled \
-            -Dpython=disabled -Dgst-plugins-good:vpx=enabled -Dgst-plugins-bad:hip=disabled -Dgst-plugins-bad:nvcodec=disabled -Dgst-plugins-base:gl=disabled -Dintrospection=disabled \
+            -Dpython=disabled -Dgst-plugins-good:vpx=enabled \
+            -Dgst-plugins-bad:hip=disabled -Dgst-plugins-bad:nvcodec=disabled \
+            -Dgst-plugins-base:gl=disabled -Dintrospection=disabled \
             -Dgst-full=enabled -Dgst-full-plugins='*' \
             -Ddevtools=enabled -Drtsp_server=disabled \
             --buildtype=release
-          
-          echo "🏗️ 编译中..."
           ninja -C build -j$(nproc)
-          
-          echo "📦 安装中..."
           ninja -C build install
-          
-          echo "✅ GStreamer 开发版本构建完成"
+
       # 🧩 修补 ELF 解释器
       - name: 修补 ELF 可执行文件
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
           INTERP=$INSTALL_ROOT/lib/ld-linux-aarch64.so.1
           echo "🔧 修补 ELF 解释器: $INTERP"
-          
-          # 修补二进制文件
-          if [ -d "$INSTALL_ROOT/bin" ]; then
-            echo "📁 修补 bin 目录..."
-            find "$INSTALL_ROOT/bin" -type f -exec file {} \; | grep 'ELF' | cut -d: -f1 | while read f; do
-              patchelf --set-interpreter "$INTERP" "$f" 2>/dev/null || true
-            done
-          fi
-          
-          # 修补库文件
-          if [ -d "$INSTALL_ROOT/lib" ]; then
-            echo "📁 修补 lib 目录..."
-            find "$INSTALL_ROOT/lib" -name "*.so*" -type f -exec file {} \; | grep 'ELF' | cut -d: -f1 | while read f; do
-              patchelf --set-interpreter "$INTERP" "$f" 2>/dev/null || true
-            done
-          fi
-          
-          # 修补 GStreamer 插件
-          if [ -d "$INSTALL_ROOT/lib/gstreamer1.0" ]; then
-            echo "📁 修补 GStreamer 插件目录..."
-            find "$INSTALL_ROOT/lib/gstreamer1.0" -name "*.so" -type f -exec file {} \; | grep 'ELF' | cut -d: -f1 | while read f; do
-              patchelf --set-interpreter "$INTERP" "$f" 2>/dev/null || true
-            done
-          fi
+          for DIR in bin lib lib/gstreamer-1.0; do
+            if [ -d "$INSTALL_ROOT/$DIR" ]; then
+              echo "📁 修补 $DIR ..."
+              find "$INSTALL_ROOT/$DIR" -type f -exec file {} \; | grep ELF | cut -d: -f1 | while read f; do
+                patchelf --set-interpreter "$INTERP" "$f" 2>/dev/null || true
+              done
+            fi
+          done
+
       # 🧱 打包构建结果
       - name: 打包 glibc 目录
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
           cd /data/data/com.termux/files/usr
           TAR_NAME="termux-glibc-gst-decoders-${VERSION}.tar.gz"
-          echo "📦 打包: $TAR_NAME"
           tar -czvf /home/runner/$TAR_NAME glibc
-          echo "TAR_NAME=$TAR_NAME" >> $GITHUB_ENV
-          
-          # 保存当前提交记录
           echo "$LATEST_COMMIT" > ${{ env.LAST_COMMIT_FILE }}
-          echo "✅ 打包完成: $TAR_NAME"
+          echo "TAR_NAME=$TAR_NAME" >> $GITHUB_ENV
+
       # ⬆️ 上传构建产物
       - name: 上传构建产物
         if: steps.check_build.outputs.skip_build == 'false'
@@ -190,43 +198,14 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ env.VERSION }}
-          name: "GStreamer Decoders ${{ env.VERSION }} (aarch64, Termux glibc)"
+          name: "GStreamer Decoders ${{ env.VERSION }} + libvpx/libdav1d (aarch64, Termux glibc)"
           body: |
-            ## 🎯 GStreamer 开发版本构建
-            
-            ### 📋 构建信息
-            - **版本**: `${{ env.VERSION }}`
-            - **架构**: aarch64
-            - **环境**: Termux glibc
-            - **提交**: [`${{ env.COMMIT_SHORT }}`](https://gitlab.freedesktop.org/gstreamer/gstreamer/-/commit/${{ env.LATEST_COMMIT }})
-            - **提交日期**: ${{ env.COMMIT_DATE }}
-            - **作者**: `${{ env.AUTHOR }}`
-            - **构建时间**: `${{ env.BUILD_DATE }}`
-            
-            ### 🛠️ 构建特性
-            - ✅ **基础插件** (base)
-            - ✅ **优质插件** (good) 
-            - ✅ **丑陋插件** (ugly)
-            - ✅ **不良插件** (bad)
-            - ✅ **LibAV 支持**
-            - ✅ **GPL 插件**
-            - ✅ **开发工具**
-            - ❌ **RTSP 服务器** (已禁用)
-            - 🏗️ **构建类型**: release
-            
-            ### 📦 文件信息
-            - **文件名**: `${{ env.TAR_NAME }}`
-            - **包含**: 完整的 GStreamer 开发版本安装
-            
-            ### ⚠️ 注意事项
-            - 此为开发版本，可能包含未稳定的特性
-            - 建议仅用于测试和开发目的
-            - 生产环境请使用稳定版本
-            
-            ### 📥 使用方法
-            1. 下载并解压到 Termux 的 `/data/data/com.termux/files/usr/` 目录
-            2. 设置环境变量: `export GST_PLUGIN_PATH=/data/data/com.termux/files/usr/glibc/lib/gstreamer1.0`
-            3. 测试: `gst-inspect-1.0 --version`
+            ## 🎯 GStreamer + libvpx v1.14.0 + libdav1d 构建 (aarch64)
+            - GStreamer 版本: `${{ env.VERSION }}`
+            - libvpx 版本: v1.14.0
+            - libdav1d 版本: 最新
+            - 安装路径: `${{ env.INSTALL_ROOT }}/lib/gstreamer-1.0`
+            - 支持 VP8 / VP9 / AV1 解码
           files: /home/runner/${{ env.TAR_NAME }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
