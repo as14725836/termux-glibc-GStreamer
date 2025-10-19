@@ -144,7 +144,7 @@ jobs:
         run: |
           INTERP=$INSTALL_ROOT/lib/ld-linux-aarch64.so.1
           echo "🔧 修补 ELF 解释器: $INTERP"
-          for DIR in bin lib lib/gstreamer-1.0; do
+          for DIR in bin libexec/gstreamer-1.0; do
             if [ -d "$INSTALL_ROOT/$DIR" ]; then
               echo "📁 修补 $DIR ..."
               find "$INSTALL_ROOT/$DIR" -type f -exec file {} \; | grep ELF | cut -d: -f1 | while read f; do
