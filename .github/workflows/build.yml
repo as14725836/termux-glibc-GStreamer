@@ -116,17 +116,24 @@ jobs:
           echo "✅ libvpx v1.14.0 构建完成并安装到 GStreamer 插件目录"
 
       # 🧩 构建 dav1d (8+16bit 最小体积)
-      - name: 构建 dav1d v1.4.3 (8+16bit)
+      - name: 构建 dav1d v1.4.2 (8+16bit)
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
-          echo "📦 构建 dav1d v1.4.3..."
-          git clone --depth=1 https://code.videolan.org/videolan/dav1d.git
+          echo "📦 构建 dav1d v1.4.2..."
+          python3 -m pip install --upgrade pip setuptools wheel
+          pip install meson==1.7.0 ninja==1.11.1
+          
+          git clone https://code.videolan.org/videolan/dav1d.git
           cd dav1d
+          git fetch --tags
+          git checkout 1.4.2 || git checkout $(git describe --tags $(git rev-list --tags --max-count=1))
+          
+          rm -rf build
           meson setup build \
             --prefix=${{ env.INSTALL_ROOT }} \
             --libdir=lib \
             --buildtype=release \
-            -Dbitdepths=8,16 \
+            -Dbitdepths=['8', '16'] \
             -Denable_tools=false \
             -Denable_examples=false \
             -Denable_tests=false \
@@ -135,13 +142,16 @@ jobs:
             -Dlogging=false \
             -Dtestdata_tests=false \
             -Dfuzzing_engine=none \
-            -Dtrim_dsp=true \
+            -Dtrim_dsp=if-release \
             -Dxxhash_muxer=auto \
             -Dmacos_kperf=false
+          
           ninja -C build -j$(nproc)
-          sudo ninja -C build install
+          meson install -C build --no-rebuild
+          
+          sudo mkdir -p ${{ env.INSTALL_ROOT }}/lib/gstreamer-1.0
           sudo cp ${{ env.INSTALL_ROOT }}/lib/libdav1d.so* ${{ env.INSTALL_ROOT }}/lib/gstreamer-1.0/ || true
-          echo "✅ dav1d v1.4.3 构建完成并安装"
+          echo "✅ dav1d v1.4.2 构建完成并安装"
 
       # 🛠️ 构建 GStreamer 解码器具
       - name: 构建 GStreamer 解码器
