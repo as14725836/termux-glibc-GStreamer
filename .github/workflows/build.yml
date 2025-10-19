@@ -128,7 +128,7 @@ jobs:
             --libdir=lib \
             -Dbase=enabled -Dgood=enabled -Dugly=enabled -Dbad=enabled \
             -Dlibav=enabled -Dgpl=disabled -Ddefault_library=shared \
-            -Dtests=disabled -Ddoc=disabled -Dexamples=disabled \
+            -Dtests=disabled -Daacparse=disabled -Ddoc=disabled -Dexamples=disabled \
             -Dpython=disabled -Dgst-plugins-good:vpx=enabled \
             -Dgst-plugins-bad:hip=disabled -Dgst-plugins-bad:nvcodec=disabled \
             -Dgst-plugins-base:gl=disabled -Dintrospection=disabled \
