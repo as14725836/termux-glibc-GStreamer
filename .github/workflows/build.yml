@@ -120,7 +120,7 @@ jobs:
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
           echo "📦 构建 libdav1d..."
-          git clone --depth=1 https://code.videolan.org/videolan/libdav1d.git
+          git clone --depth=1 https://github.com/videolan/libdav1d.git
           cd libdav1d
           meson setup build --prefix=${{ env.INSTALL_ROOT }} --libdir=${{ env.INSTALL_ROOT }}/lib/gstreamer-1.0 --buildtype=release
           ninja -C build -j$(nproc)
