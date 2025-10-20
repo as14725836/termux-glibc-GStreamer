@@ -120,9 +120,9 @@ jobs:
             --prefix=$INSTALL_ROOT \
             --libdir=lib \
             -Dbase=enabled -Dgood=enabled -Dugly=enabled -Dbad=enabled \
-            -Dlibav=enabled -Dgpl=disabled -Ddefault_library=shared \
+            -Dlibav=enabled -Dgpl=enabled -Ddefault_library=shared \
             -Dtests=disabled -Ddoc=disabled -Dexamples=disabled \
-            -Dpython=disabled -Dnls=disabled -Dgst-plugins-good:vpx=enabled \
+            -Dpython=disabled -Dnls=disabled -Dgst-plugins-libav:aac=disabled -Dgst-plugins-good:vpx=enabled \
             -Dgst-plugins-bad:hip=disabled -Dgst-plugins-bad:nvcodec=disabled \
             -Dgst-plugins-base:gl=disabled -Dintrospection=disabled \
             -Dgst-full=enabled -Dgst-full-plugins='*' \
