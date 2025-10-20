@@ -12,7 +12,7 @@ permissions:
 
 env:
   LAST_COMMIT_FILE: last_gst_commit.txt
-  INSTALL_ROOT: /data/data/com.winlator/files/rootfs
+  INSTALL_ROOT: /data/data/com.winlator/files/rootfs/usr
 
 jobs:
   build:
@@ -148,9 +148,9 @@ jobs:
       - name: 打包 rootfs 目录
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
-          cd /data/data/com.winlator/files
+          cd /data/data/com.winlator/files/rootfs
           TAR_NAME="winlator-gst-decoders-${VERSION}.tar.gz"
-          tar -czvf /home/runner/$TAR_NAME rootfs
+          tar -czvf /home/runner/$TAR_NAME usr
           echo "$LATEST_COMMIT" > ${{ env.LAST_COMMIT_FILE }}
           echo "TAR_NAME=$TAR_NAME" >> $GITHUB_ENV
       # ⬆️ 上传构建产物
