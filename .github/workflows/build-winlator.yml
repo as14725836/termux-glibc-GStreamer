@@ -1,4 +1,4 @@
-name: Build GStreamer Decoders (aarch64, Dev + libvpx)
+name: winlator GStreamer Decoders
 
 on:
   workflow_dispatch:
