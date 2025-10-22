@@ -119,7 +119,7 @@ jobs:
           meson setup build \
             --prefix=$INSTALL_ROOT \
             --libdir=lib \
-            -Dbase=enabled -Dgood=enabled -Dugly=enabled -Dbad=enabled \
+            -Dbase=enabled -Dpackage-origin="termux-glibc" -Dgood=enabled -Dugly=enabled -Dbad=enabled \
             -Dlibav=enabled -Dgpl=enabled -Ddefault_library=shared \
             -Dtests=disabled -Ddoc=disabled -Dexamples=disabled \
             -Dpython=disabled -Dnls=disabled -Dgst-plugins-libav:aac=disabled -Dgst-plugins-good:vpx=enabled \
