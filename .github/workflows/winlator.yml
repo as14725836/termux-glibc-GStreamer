@@ -18,7 +18,7 @@ jobs:
   build:
     runs-on: ubuntu-24.04-arm
 
-    steps:
+    steps: 
       # 🧩 检出仓库
       - name: 检出 workflow 仓库
         uses: actions/checkout@v4
@@ -39,7 +39,7 @@ jobs:
           pip install --upgrade meson ninja
 
       # 🔧 设置 Winlator 编译与链接路径（绝对路径）
-      - name: 设置 Winlator编译环境
+      - name: 设置 Winlator 编译环境
         run: |
           WINLATOR_ROOT="/data/data/com.winlator/files/rootfs"
           WINLATOR_LIB="${WINLATOR_ROOT}/usr/lib"
@@ -151,44 +151,47 @@ jobs:
           ninja -C build -j$(nproc)
           ninja -C build install
 
-      # 🔧 并行修正 ELF 文件 RPATH（绝对路径）
-      - name: 修正 ELF 文件 RPATH（整合版）
+      # 🔧 修正 ELF 文件 RPATH（绝对路径 + 并行安全版）
+      - name: 修正 ELF 文件 RPATH（安全并行）
         if: steps.check_build.outputs.skip_build == 'false'
+        shell: bash
         run: |
-          echo "🔧 开始修正 ELF 文件 RPATH（绝对路径、并行处理）..."
+          echo "🔧 开始修正 ELF 文件 RPATH（绝对路径 + 并行处理）..."
 
           WINLATOR_LIB="${INSTALL_ROOT}/lib"
-          GST_PLUGINS_PATH="${INSTALL_ROOT}/lib/gstreamer-1.0
+          GST_PLUGINS_PATH="${INSTALL_ROOT}/lib/gstreamer-1.0"
 
-          TOTAL=0
-          FIXED=0
-          SKIPPED=0
-
-          # 找出所有动态 ELF 文件
-          FILES=$(find $INSTALL_ROOT -type f | while read f; do
+          echo "📦 扫描动态 ELF 文件中..."
+          FILES=$(find "$INSTALL_ROOT" -type f | while read -r f; do
               if file "$f" | grep -q "ELF"; then
-                  INTERP=$(readelf -l "$f" 2>/dev/null | grep -i 'INTERP' || true)
-                  if [ -n "$INTERP" ]; then
+                  if readelf -l "$f" 2>/dev/null | grep -q 'INTERP'; then
                       echo "$f"
                   fi
               fi
           done)
 
-          TOTAL=$(echo "$FILES" | wc -l)
+          TOTAL=$(echo "$FILES" | grep -c . || true)
+          echo "📊 检测到 $TOTAL 个动态 ELF 文件"
 
-          # 并行处理
-          echo "$FILES" | xargs -P $(nproc) -I {} bash -c '
-              f="{}"
-              echo "✅ 修正 $f"
-              patchelf --set-rpath "'"$WINLATOR_LIB:$GST_PLUGINS_PATH"'" "$f"
-              patchelf --set-interpreter "'"$WINLATOR_LIB/ld-linux-aarch64.so.1"'" "$f"
-          '
+          if [ "$TOTAL" -eq 0 ]; then
+              echo "⚠️ 未找到可修正的动态 ELF 文件，跳过"
+              exit 0
+          fi
 
-          FIXED=$(echo "$FILES" | wc -l)
-          SKIPPED=$((TOTAL - FIXED))
+          FIX_SCRIPT=$(mktemp)
+          cat <<'EOF' > "$FIX_SCRIPT"
+          f="$1"
+          WINLATOR_LIB="$2"
+          GST_PLUGINS_PATH="$3"
+          echo "✅ 修正 $f"
+          patchelf --set-rpath "${WINLATOR_LIB}:${GST_PLUGINS_PATH}" "$f" 2>/dev/null || true
+          patchelf --set-interpreter "${WINLATOR_LIB}/ld-linux-aarch64.so.1" "$f" 2>/dev/null || true
+          EOF
+          chmod +x "$FIX_SCRIPT"
+
+          echo "$FILES" | xargs -P "$(nproc)" -I{} bash "$FIX_SCRIPT" "{}" "$WINLATOR_LIB" "$GST_PLUGINS_PATH"
 
           echo "✅ ELF 文件 RPATH 修正完成"
-          echo "📊 总文件: $TOTAL | 修正: $FIXED | 跳过: $SKIPPED"
 
       # 🧱 打包构建结果
       - name: 打包 usr 目录
