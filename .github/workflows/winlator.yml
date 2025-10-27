@@ -151,23 +151,46 @@ jobs:
           ninja -C build -j$(nproc)
           ninja -C build install
 
-      # 🔧 修正 ELF 文件 RPATH 并嵌入 GStreamer 插件路径
-      - name: 修正 ELF 文件 RPATH
+      # 🔧 并行修正 ELF 文件 RPATH（绝对路径）
+      - name: 修正 ELF 文件 RPATH（整合版）
+        if: steps.check_build.outputs.skip_build == 'false'
         run: |
-          echo "🔧 开始修正 ELF 文件 RPATH 并嵌入插件路径..."
+          echo "🔧 开始修正 ELF 文件 RPATH（绝对路径、并行处理）..."
+
           WINLATOR_LIB="${INSTALL_ROOT}/lib"
           GST_PLUGINS_PATH="${INSTALL_ROOT}/lib/gstreamer-1.0"
-          find $INSTALL_ROOT -type f | while read f; do
-              if file "$f" | grep -q "ELF.*dynamically linked"; then
-                  echo "✅ 修正 $f"
-                  # 设置 rpath 为库路径 + 插件路径
-                  patchelf --set-rpath "$WINLATOR_LIB:$GST_PLUGINS_PATH" "$f"
-                  patchelf --set-interpreter "$WINLATOR_LIB/ld-linux-aarch64.so.1" "$f"
-              else
-                  echo "⚠️ 跳过 $f (非动态 ELF 或静态库)"
+
+          export -f patchelf
+
+          TOTAL=0
+          FIXED=0
+          SKIPPED=0
+
+          # 找出所有动态 ELF 文件
+          FILES=$(find $INSTALL_ROOT -type f | while read f; do
+              if file "$f" | grep -q "ELF"; then
+                  INTERP=$(readelf -l "$f" 2>/dev/null | grep -i 'INTERP' || true)
+                  if [ -n "$INTERP" ]; then
+                      echo "$f"
+                  fi
               fi
-          done
+          done)
+
+          TOTAL=$(echo "$FILES" | wc -l)
+
+          # 并行处理
+          echo "$FILES" | xargs -P $(nproc) -I {} bash -c '
+              f="{}"
+              echo "✅ 修正 $f"
+              patchelf --set-rpath "'"$WINLATOR_LIB:$GST_PLUGINS_PATH"'" "$f"
+              patchelf --set-interpreter "'"$WINLATOR_LIB/ld-linux-aarch64.so.1"'" "$f"
+          '
+
+          FIXED=$(echo "$FILES" | wc -l)
+          SKIPPED=$((TOTAL - FIXED))
+
           echo "✅ ELF 文件 RPATH 修正完成"
+          echo "📊 总文件: $TOTAL | 修正: $FIXED | 跳过: $SKIPPED"
 
       # 🧱 打包构建结果
       - name: 打包 usr 目录
