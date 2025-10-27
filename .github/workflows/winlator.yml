@@ -38,7 +38,7 @@ jobs:
           pip install --upgrade pip
           pip install --upgrade meson ninja
 
-      # 🔧 设置 Winlator 编译与链接路径（绝对路径）
+      # 🔧 设置 Winlator 编译与链接路径
       - name: 设置 Winlator 编译环境
         run: |
           WINLATOR_ROOT="/data/data/com.winlator/files/rootfs"
@@ -51,12 +51,11 @@ jobs:
           echo "export LD_LIBRARY_PATH='${WINLATOR_LIB}:\$LD_LIBRARY_PATH'" >> $GITHUB_ENV
           echo "export PKG_CONFIG_PATH='${WINLATOR_LIB}/pkgconfig:${WINLATOR_LIB}/aarch64-linux-gnu/pkgconfig:\$PKG_CONFIG_PATH'" >> $GITHUB_ENV
 
-          echo "✅ 已设置 Winlator 环境变量（绝对路径）"
+          echo "✅ 已设置 Winlator 环境变量"
 
       # 🧬 克隆 GStreamer 开发版本
       - name: 克隆 GStreamer 开发版本
-        run: |
-          git clone --depth=1 https://gitlab.freedesktop.org/gstreamer/gstreamer.git
+        run: git clone --depth=1 https://gitlab.freedesktop.org/gstreamer/gstreamer.git
 
       # 🔍 获取开发版本信息
       - name: 获取开发版本信息
@@ -106,7 +105,7 @@ jobs:
         if: steps.check_build.outputs.skip_build == 'true'
         run: exit 0
 
-      # 🧱 构建 libvpx v1.14.0
+      # 🧱 构建 libvpx v1.14.0（绝对嵌入）
       - name: 构建 libvpx v1.14.0
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
@@ -114,8 +113,8 @@ jobs:
           cd libvpx
           git checkout v1.14.0
           ./configure \
-            --prefix=${{ env.INSTALL_ROOT }} \
-            --libdir=${{ env.INSTALL_ROOT }}/lib \
+            --prefix=/data/data/com.winlator/files/rootfs/usr \
+            --libdir=/data/data/com.winlator/files/rootfs/usr/lib \
             --enable-shared \
             --enable-vp8 \
             --enable-vp9 \
@@ -126,23 +125,27 @@ jobs:
             --disable-docs
           make -j$(nproc)
           sudo make install
-          echo "✅ libvpx v1.14.0 已安装到 ${{ env.INSTALL_ROOT }}/lib"
+          echo "✅ libvpx v1.14.0 已安装到 /data/data/com.winlator/files/rootfs/usr/lib"
 
-      # 🛠️ 构建 GStreamer 解码器
+      # 🛠️ 构建 GStreamer 解码器（绝对嵌入）
       - name: 构建 GStreamer 解码器
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
           cd gstreamer
           git submodule update --init --recursive
-          sudo mkdir -p $INSTALL_ROOT
+          sudo mkdir -p /data/data/com.winlator/files/rootfs/usr
           sudo chmod -R 777 /data
           meson setup build \
-            --prefix=$INSTALL_ROOT \
+            -Dprefix=/data/data/com.winlator/files/rootfs/usr \
             --libdir=lib \
-            -Dbase=enabled -Dpackage-origin="gstreamer-winlator" -Dgood=enabled -Dugly=enabled -Dbad=enabled \
+            -Dbase=enabled \
+            -Dpackage-origin="gstreamer-winlator" \
+            -Dgood=enabled -Dugly=enabled -Dbad=enabled \
             -Dlibav=enabled -Dgpl=enabled -Ddefault_library=shared \
             -Dtests=disabled -Ddoc=disabled -Dexamples=disabled \
-            -Dpython=disabled -Dnls=disabled -Dgst-plugins-libav:aac=disabled -Dgst-plugins-good:vpx=enabled \
+            -Dpython=disabled -Dnls=disabled \
+            -Dgst-plugins-libav:aac=disabled \
+            -Dgst-plugins-good:vpx=enabled \
             -Dgst-plugins-bad:hip=disabled -Dgst-plugins-bad:nvcodec=disabled \
             -Dgst-plugins-base:gl=disabled -Dintrospection=disabled \
             -Dgst-full=enabled -Dgst-full-plugins='*' \
@@ -151,15 +154,14 @@ jobs:
           ninja -C build -j$(nproc)
           ninja -C build install
 
-      # 🔧 修正 ELF 文件 RPATH（绝对路径 + 并行安全版）
-      - name: 修正 ELF 文件 RPATH（安全并行）
+      # 🔧 修正 ELF 文件 RPATH（并行、绝对路径）
+      - name: 修正 ELF 文件 RPATH（整合版）
         if: steps.check_build.outputs.skip_build == 'false'
         shell: bash
         run: |
-          echo "🔧 开始修正 ELF 文件 RPATH（绝对路径 + 并行处理）..."
-
-          WINLATOR_LIB="${INSTALL_ROOT}/lib"
-          GST_PLUGINS_PATH="${INSTALL_ROOT}/lib/gstreamer-1.0"
+          echo "🔧 开始修正 ELF 文件 RPATH（绝对路径、并行处理）..."
+          WINLATOR_LIB="/data/data/com.winlator/files/rootfs/usr/lib"
+          GST_PLUGINS_PATH="/data/data/com.winlator/files/rootfs/usr/lib/gstreamer-1.0"
 
           echo "📦 扫描动态 ELF 文件中..."
           FILES=$(find "$INSTALL_ROOT" -type f | while read -r f; do
@@ -169,28 +171,20 @@ jobs:
                   fi
               fi
           done)
-
           TOTAL=$(echo "$FILES" | grep -c . || true)
           echo "📊 检测到 $TOTAL 个动态 ELF 文件"
 
-          if [ "$TOTAL" -eq 0 ]; then
-              echo "⚠️ 未找到可修正的动态 ELF 文件，跳过"
-              exit 0
-          fi
+          [ "$TOTAL" -eq 0 ] && echo "⚠️ 未找到可修正的动态 ELF 文件，跳过" && exit 0
 
           FIX_SCRIPT=$(mktemp)
           cat <<'EOF' > "$FIX_SCRIPT"
-          f="$1"
-          WINLATOR_LIB="$2"
-          GST_PLUGINS_PATH="$3"
+          f="$1"; WINLATOR_LIB="$2"; GST_PLUGINS_PATH="$3"
           echo "✅ 修正 $f"
           patchelf --set-rpath "${WINLATOR_LIB}:${GST_PLUGINS_PATH}" "$f" 2>/dev/null || true
           patchelf --set-interpreter "${WINLATOR_LIB}/ld-linux-aarch64.so.1" "$f" 2>/dev/null || true
           EOF
           chmod +x "$FIX_SCRIPT"
-
           echo "$FILES" | xargs -P "$(nproc)" -I{} bash "$FIX_SCRIPT" "{}" "$WINLATOR_LIB" "$GST_PLUGINS_PATH"
-
           echo "✅ ELF 文件 RPATH 修正完成"
 
       # 🧱 打包构建结果
@@ -248,7 +242,7 @@ jobs:
             - 文件名: `${{ env.TAR_NAME }}`
             - 动态链接器: `/data/data/com.winlator/files/rootfs/usr/lib/ld-linux-aarch64.so.1`
             - RPATH: `/data/data/com.winlator/files/rootfs/usr/lib:/data/data/com.winlator/files/rootfs/usr/lib/gstreamer-1.0`
-            - 安装路径: `${{ env.INSTALL_ROOT }}`
+            - 安装路径: `/data/data/com.winlator/files/rootfs/usr`
             
             ### 📥 测试命令
             ```bash
