@@ -38,11 +38,20 @@ jobs:
           pip install --upgrade pip
           pip install --upgrade meson ninja
 
-      # 🔧 设置 Winlator 动态链接器路径
-      - name: 设置 Winlator 动态链接器路径
+      # 🔧 设置 Winlator 编译与链接路径（方案 B：绝对路径）
+      - name: 设置 Winlator 编译与链接路径
         run: |
-          echo "export LDFLAGS='-Wl,--dynamic-linker=/data/data/com.winlator/files/rootfs/usr/lib/ld-linux-aarch64.so.1'" >> $GITHUB_ENV
-          echo "✅ 已设置 LDFLAGS 动态链接器为 Winlator"
+          WINLATOR_ROOT="/data/data/com.winlator/files/rootfs"
+          WINLATOR_LIB="${WINLATOR_ROOT}/usr/lib"
+          WINLATOR_INC="${WINLATOR_ROOT}/usr/include"
+
+          echo "export LDFLAGS='-L${WINLATOR_LIB} -Wl,--dynamic-linker=${WINLATOR_LIB}/ld-linux-aarch64.so.1 -Wl,-rpath,${WINLATOR_LIB}'" >> $GITHUB_ENV
+          echo "export CFLAGS='-I${WINLATOR_INC}'" >> $GITHUB_ENV
+          echo "export CXXFLAGS='-I${WINLATOR_INC}'" >> $GITHUB_ENV
+          echo "export LD_LIBRARY_PATH='${WINLATOR_LIB}:\$LD_LIBRARY_PATH'" >> $GITHUB_ENV
+          echo "export PKG_CONFIG_PATH='${WINLATOR_LIB}/pkgconfig:${WINLATOR_LIB}/aarch64-linux-gnu/pkgconfig:\$PKG_CONFIG_PATH'" >> $GITHUB_ENV
+
+          echo "✅ 已设置 Winlator 环境变量（绝对路径模式）"
 
       # 🧬 克隆 GStreamer 开发版本
       - name: 克隆 GStreamer 开发版本
@@ -101,7 +110,6 @@ jobs:
       - name: 构建 libvpx v1.14.0
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
-          echo "📦 构建 libvpx v1.14.0..."
           git clone https://chromium.googlesource.com/webm/libvpx
           cd libvpx
           git checkout v1.14.0
@@ -117,9 +125,8 @@ jobs:
             --disable-examples \
             --disable-docs
           make -j$(nproc)
-          sudo mkdir -p ${{ env.INSTALL_ROOT }}/lib/gstreamer-1.0
           sudo make install
-          echo "✅ libvpx v1.14.0 构建完成并安装到 GStreamer 插件目录"
+          echo "✅ libvpx v1.14.0 已安装到 ${{ env.INSTALL_ROOT }}/lib"
 
       # 🛠️ 构建 GStreamer 解码器
       - name: 构建 GStreamer 解码器
@@ -139,32 +146,19 @@ jobs:
             -Dgst-plugins-bad:hip=disabled -Dgst-plugins-bad:nvcodec=disabled \
             -Dgst-plugins-base:gl=disabled -Dintrospection=disabled \
             -Dgst-full=enabled -Dgst-full-plugins='*' \
-            -Ddevtools=enabled -Drtsp_server=disabled \
+            -Ddevtools=disabled -Dtools=disabled -Drtsp_server=disabled \
             --buildtype=release
           ninja -C build -j$(nproc)
           ninja -C build install
 
-      # 🔍 验证 ELF 动态链接器
-      - name: 验证 ELF 动态链接器路径
+      # 🔍 验证 ELF 动态链接器与 RPATH
+      - name: 验证 ELF 动态链接器与 RPATH
         run: |
-          echo "🔍 检查动态链接器..."
+          echo "🔍 检查动态链接器与 rpath..."
           find $INSTALL_ROOT -type f -exec file {} \; | grep ELF | cut -d: -f1 | while read f; do
+            echo "🔹 $f"
             readelf -l "$f" | grep interpreter || true
-          done
-
-      # 🧩 修补 ELF 可执行文件（冗余安全处理）
-      - name: 修补 ELF 可执行文件
-        if: steps.check_build.outputs.skip_build == 'false'
-        run: |
-          INTERP=$INSTALL_ROOT/lib/ld-linux-aarch64.so.1
-          echo "🔧 修补 ELF 解释器: $INTERP"
-          for DIR in bin libexec/gstreamer-1.0; do
-            if [ -d "$INSTALL_ROOT/$DIR" ]; then
-              echo "📁 修补 $DIR ..."
-              find "$INSTALL_ROOT/$DIR" -type f -exec file {} \; | grep ELF | cut -d: -f1 | while read f; do
-                patchelf --set-interpreter "$INTERP" "$f" 2>/dev/null || true
-              done
-            fi
+            readelf -d "$f" | grep PATH || true
           done
 
       # 🧱 打包构建结果
@@ -203,7 +197,7 @@ jobs:
           name: "GStreamer Decoders ${{ env.VERSION }} (aarch64, Winlator)"
           body: |
             ## 🎯 GStreamer 开发版本构建
-            
+
             ### 📋 构建信息
             - **版本**: `${{ env.VERSION }}`
             - **架构**: aarch64
@@ -212,15 +206,16 @@ jobs:
             - **提交日期**: ${{ env.COMMIT_DATE }}
             - **作者**: `${{ env.AUTHOR }}`
             - **构建时间**: `${{ env.BUILD_DATE }}`
-            
+
             ### 🛠️ 构建特性
             - ✅ Base / Good / Ugly / Bad / LibAV / GPL / Devtools 全启用
             - ❌ RTSP Server 已禁用
             - 🏗️ 构建类型: Release
-            
+
             ### 📦 文件信息
             - 文件名: `${{ env.TAR_NAME }}`
             - 动态链接器: `/data/data/com.winlator/files/rootfs/usr/lib/ld-linux-aarch64.so.1`
+            - RPATH: `/data/data/com.winlator/files/rootfs/usr/lib`
             - 安装路径: `${{ env.INSTALL_ROOT }}`
             
             ### 📥 测试命令
