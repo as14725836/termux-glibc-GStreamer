@@ -158,9 +158,7 @@ jobs:
           echo "🔧 开始修正 ELF 文件 RPATH（绝对路径、并行处理）..."
 
           WINLATOR_LIB="${INSTALL_ROOT}/lib"
-          GST_PLUGINS_PATH="${INSTALL_ROOT}/lib/gstreamer-1.0"
-
-          export -f patchelf
+          GST_PLUGINS_PATH="${INSTALL_ROOT}/lib/gstreamer-1.0
 
           TOTAL=0
           FIXED=0
