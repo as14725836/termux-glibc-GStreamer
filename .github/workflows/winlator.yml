@@ -38,8 +38,8 @@ jobs:
           pip install --upgrade pip
           pip install --upgrade meson ninja
 
-      # 🔧 设置 Winlator 编译与链接路径（方案 B：绝对路径）
-      - name: 设置 Winlator 编译与链接路径
+      # 🔧 设置 Winlator 编译与链接路径（绝对路径）
+      - name: 设置 Winlator编译环境
         run: |
           WINLATOR_ROOT="/data/data/com.winlator/files/rootfs"
           WINLATOR_LIB="${WINLATOR_ROOT}/usr/lib"
@@ -51,7 +51,7 @@ jobs:
           echo "export LD_LIBRARY_PATH='${WINLATOR_LIB}:\$LD_LIBRARY_PATH'" >> $GITHUB_ENV
           echo "export PKG_CONFIG_PATH='${WINLATOR_LIB}/pkgconfig:${WINLATOR_LIB}/aarch64-linux-gnu/pkgconfig:\$PKG_CONFIG_PATH'" >> $GITHUB_ENV
 
-          echo "✅ 已设置 Winlator 环境变量（绝对路径模式）"
+          echo "✅ 已设置 Winlator 环境变量（绝对路径）"
 
       # 🧬 克隆 GStreamer 开发版本
       - name: 克隆 GStreamer 开发版本
@@ -151,18 +151,23 @@ jobs:
           ninja -C build -j$(nproc)
           ninja -C build install
 
-      # 🔧 修正所有 ELF 文件的 RPATH（嵌入绝对路径）
+      # 🔧 修正 ELF 文件 RPATH 并嵌入 GStreamer 插件路径
       - name: 修正 ELF 文件 RPATH
-        if: steps.check_build.outputs.skip_build == 'false'
         run: |
-          echo "🔧 开始修正 ELF 文件 RPATH 到绝对路径..."
+          echo "🔧 开始修正 ELF 文件 RPATH 并嵌入插件路径..."
           WINLATOR_LIB="${INSTALL_ROOT}/lib"
-          find $INSTALL_ROOT -type f -exec file {} \; | grep ELF | cut -d: -f1 | while read f; do
-            echo "✅ 修正 $f"
-            patchelf --set-rpath "$WINLATOR_LIB" "$f"
-            patchelf --set-interpreter "$WINLATOR_LIB/ld-linux-aarch64.so.1" "$f"
+          GST_PLUGINS_PATH="${INSTALL_ROOT}/lib/gstreamer-1.0"
+          find $INSTALL_ROOT -type f | while read f; do
+              if file "$f" | grep -q "ELF.*dynamically linked"; then
+                  echo "✅ 修正 $f"
+                  # 设置 rpath 为库路径 + 插件路径
+                  patchelf --set-rpath "$WINLATOR_LIB:$GST_PLUGINS_PATH" "$f"
+                  patchelf --set-interpreter "$WINLATOR_LIB/ld-linux-aarch64.so.1" "$f"
+              else
+                  echo "⚠️ 跳过 $f (非动态 ELF 或静态库)"
+              fi
           done
-          echo "🎉 所有 ELF 文件已修正 RPATH 和动态链接器"
+          echo "✅ ELF 文件 RPATH 修正完成"
 
       # 🧱 打包构建结果
       - name: 打包 usr 目录
@@ -218,7 +223,7 @@ jobs:
             ### 📦 文件信息
             - 文件名: `${{ env.TAR_NAME }}`
             - 动态链接器: `/data/data/com.winlator/files/rootfs/usr/lib/ld-linux-aarch64.so.1`
-            - RPATH: `/data/data/com.winlator/files/rootfs/usr/lib`
+            - RPATH: `/data/data/com.winlator/files/rootfs/usr/lib:/data/data/com.winlator/files/rootfs/usr/lib/gstreamer-1.0`
             - 安装路径: `${{ env.INSTALL_ROOT }}`
             
             ### 📥 测试命令
