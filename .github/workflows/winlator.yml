@@ -151,15 +151,18 @@ jobs:
           ninja -C build -j$(nproc)
           ninja -C build install
 
-      # 🔍 验证 ELF 动态链接器与 RPATH
-      - name: 验证 ELF 动态链接器与 RPATH
+      # 🔧 修正所有 ELF 文件的 RPATH（嵌入绝对路径）
+      - name: 修正 ELF 文件 RPATH
+        if: steps.check_build.outputs.skip_build == 'false'
         run: |
-          echo "🔍 检查动态链接器与 rpath..."
+          echo "🔧 开始修正 ELF 文件 RPATH 到绝对路径..."
+          WINLATOR_LIB="${INSTALL_ROOT}/lib"
           find $INSTALL_ROOT -type f -exec file {} \; | grep ELF | cut -d: -f1 | while read f; do
-            echo "🔹 $f"
-            readelf -l "$f" | grep interpreter || true
-            readelf -d "$f" | grep PATH || true
+            echo "✅ 修正 $f"
+            patchelf --set-rpath "$WINLATOR_LIB" "$f"
+            patchelf --set-interpreter "$WINLATOR_LIB/ld-linux-aarch64.so.1" "$f"
           done
+          echo "🎉 所有 ELF 文件已修正 RPATH 和动态链接器"
 
       # 🧱 打包构建结果
       - name: 打包 usr 目录
