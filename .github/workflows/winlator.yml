@@ -132,7 +132,7 @@ jobs:
           meson setup build \
             --prefix=$INSTALL_ROOT \
             --libdir=lib \
-            -Dbase=enabled -Dpackage-origin="termux-glibc" -Dgood=enabled -Dugly=enabled -Dbad=enabled \
+            -Dbase=enabled -Dpackage-origin="gstreamer-winlator" -Dgood=enabled -Dugly=enabled -Dbad=enabled \
             -Dlibav=enabled -Dgpl=enabled -Ddefault_library=shared \
             -Dtests=disabled -Ddoc=disabled -Dexamples=disabled \
             -Dpython=disabled -Dnls=disabled -Dgst-plugins-libav:aac=disabled -Dgst-plugins-good:vpx=enabled \
@@ -168,12 +168,12 @@ jobs:
           done
 
       # 🧱 打包构建结果
-      - name: 打包 glibc 目录
+      - name: 打包 usr 目录
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
           cd /data/data/com.winlator/files/rootfs
           TAR_NAME="winlator-gst-decoders-${VERSION}.tar.gz"
-          tar -czvf /home/runner/$TAR_NAME glibc
+          tar -czvf /home/runner/$TAR_NAME usr
           echo "$LATEST_COMMIT" > ${{ env.LAST_COMMIT_FILE }}
           echo "TAR_NAME=$TAR_NAME" >> $GITHUB_ENV
 
