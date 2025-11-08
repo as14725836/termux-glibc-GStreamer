@@ -122,7 +122,7 @@ jobs:
             -Dbase=enabled -Dpackage-origin="termux-glibc" -Dgood=enabled -Dugly=enabled -Dbad=enabled \
             -Dlibav=enabled -Dgpl=enabled -Ddefault_library=shared \
             -Dtests=disabled -Ddoc=disabled -Dexamples=disabled \
-            -Dpython=disabled -Dnls=disabled -Dgst-plugins-libav:aac=disabled -Dgst-plugins-good:vpx=enabled \
+            -Dpython=disabled -Dnls=disabled -Dgst-plugins-good:pulse=enabled -Dgst-plugins-good:oss4=disabled -Dgst-plugins-good:oss=disabled -Dgst-plugins-good:alsa=disabled -Dgst-plugins-libav:aac=disabled -Dgst-plugins-good:vpx=enabled \
             -Dgst-plugins-bad:hip=disabled -Dgst-plugins-bad:nvcodec=disabled \
             -Dgst-plugins-base:gl=disabled -Dintrospection=disabled \
             -Dgst-full=enabled -Dgst-full-plugins='*' \
