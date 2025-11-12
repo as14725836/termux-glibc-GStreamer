@@ -131,7 +131,7 @@ jobs:
             -Dbase=enabled -Dpackage-origin="Termux-Glibc" -Dgood=enabled -Dugly=enabled -Dbad=enabled \
             -Dlibav=enabled -Dgpl=enabled -Ddefault_library=shared \
             -Dtests=disabled -Ddoc=disabled -Dexamples=disabled \
-            -Dpython=disabled -Dnls=disabled -Dgst-plugins-good:pulse=enabled -Dgst-plugins-good:oss4=disabled -Dgst-plugins-good:oss=disabled -Dgst-plugins-libav:aac=disabled -Dgst-plugins-good:vpx=enabled \
+            -Dpython=disabled -Dnls=disabled -Dgst-plugins-good:pulse=enabled -Dgst-plugins-good:oss4=disabled -Dgst-plugins-good:oss=disabled -Dgst-plugins-good:vpx=enabled \
             -Dgst-plugins-bad:nvcodec=disabled \
             -Dgst-plugins-base:gl=disabled -Dgst-plugins-base:alsa=disabled -Dgst-plugins-base:theora=enabled -Dgst-plugins-base:x11=enabled -Dintrospection=disabled \
             -Dgst-full=enabled -Dgst-full-plugins='*' \
