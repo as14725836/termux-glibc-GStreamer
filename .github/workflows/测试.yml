@@ -55,10 +55,10 @@ jobs:
           cd /
           rm -rf $BUILD_DIR
           
-      # 🧬 克隆 FFmpeg 开发版本
+      # 🧬 克隆 FFmpeg 开发版本 (使用GitHub镜像)
       - name: 克隆 FFmpeg 开发版本
         run: |
-          git clone --depth=1 https://git.ffmpeg.org/ffmpeg.git
+          git clone --depth=1 https://github.com/FFmpeg/FFmpeg.git ffmpeg
 
       # 🔍 获取开发版本信息
       - name: 获取开发版本信息
