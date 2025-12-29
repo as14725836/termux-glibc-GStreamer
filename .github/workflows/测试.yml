@@ -37,16 +37,23 @@ jobs:
       # 📦 安装或构建 libaom (需要 >= 2.0.0)
       - name: 安装 libaom >= 2.0.0
         run: |
+          # 创建一个带时间戳的临时目录以避免冲突
+          BUILD_DIR=$(mktemp -d)
+          cd $BUILD_DIR
+          echo "在目录 $BUILD_DIR 中构建 aom"
+          
           # 克隆并构建最新版本的 aom
-          cd /tmp
-          rm -rf aom
           git clone --depth=1 https://aomedia.googlesource.com/aom
           cd aom
-          mkdir build && cd build
+          mkdir build_dir && cd build_dir
           cmake -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_SHARED_LIBS=1 -DENABLE_TESTS=0 -DENABLE_DOCS=0 -DENABLE_examples=0 ..
           make -j$(nproc)
           sudo make install
           sudo ldconfig
+          
+          # 清理临时目录
+          cd /
+          rm -rf $BUILD_DIR
           
       # 🧬 克隆 FFmpeg 开发版本
       - name: 克隆 FFmpeg 开发版本
