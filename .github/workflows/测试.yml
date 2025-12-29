@@ -32,7 +32,7 @@ jobs:
             libopus-dev libtheora-dev libvorbis-dev libass-dev libfreetype6-dev \
             libfribidi-dev libgnutls28-dev libxvidcore-dev libxext-dev libxfixes-dev \
             libxcb1-dev libdrm-dev libva-dev libvdpau-dev libxcb-shm0-dev libxcb-xfixes0-dev \
-            libnuma-dev cmake libvulkan-dev libgl1-mesa-dev libglu1-mesa-dev patchelf
+            libnuma-dev cmake meson ninja-build libvulkan-dev libgl1-mesa-dev libglu1-mesa-dev patchelf
 
       # 📦 安装或构建 libaom (需要 >= 2.0.0)
       - name: 安装 libaom >= 2.0.0
@@ -49,6 +49,27 @@ jobs:
           cmake -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_SHARED_LIBS=1 -DENABLE_TESTS=0 -DENABLE_DOCS=0 -DENABLE_examples=0 ..
           make -j$(nproc)
           sudo make install
+          sudo ldconfig
+          
+          # 清理临时目录
+          cd /
+          rm -rf $BUILD_DIR
+          
+      # 📦 安装或构建 libdav1d (需要 >= 1.0.0)
+      - name: 安装 libdav1d >= 1.0.0
+        run: |
+          # 创建一个带时间戳的临时目录以避免冲突
+          BUILD_DIR=$(mktemp -d)
+          cd $BUILD_DIR
+          echo "在目录 $BUILD_DIR 中构建 dav1d"
+          
+          # 克隆并构建最新版本的 dav1d
+          git clone --depth=1 https://code.videolan.org/videolan/dav1d.git
+          cd dav1d
+          mkdir build && cd build
+          meson .. --prefix=/usr/local --libdir=lib -Denable_tools=false -Denable_tests=false
+          ninja
+          sudo ninja install
           sudo ldconfig
           
           # 清理临时目录
