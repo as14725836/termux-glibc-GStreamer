@@ -23,15 +23,6 @@ jobs:
       - name: 检出 workflow 仓库
         uses: actions/checkout@v4
 
-      - name: 修复依赖
-        run: |
-          sudo apt clean
-          sudo apt autoclean
-          sudo rm -rf /var/lib/apt/lists/*
-          sudo apt update
-          sudo rm /var/lib/apt/lists/lock
-          sudo rm /var/cache/apt/archives/lock
-
       # 📦 安装基础依赖
       - name: 安装基础依赖
         run: |
@@ -108,12 +99,15 @@ jobs:
           sudo chmod -R 777 /data
           
           # 检出特定版本以确保库版本兼容性
-          # 为确保生成用户指定的所有库版本，我们会构建多个版本
-          # 首先构建FFmpeg 5.1.x以生成62版本的库
+          # 查找可用的版本分支
           git fetch --all
           
-          # 检出FFmpeg 5.1以生成libavformat.so.62, libavcodec.so.62, libavutil.so.58
-          if git checkout release/5.1; then
+          # 检查可用的远程分支
+          echo "可用的FFmpeg分支:"
+          git branch -r | grep -E "release|n5\.1|n4\.4" || echo "未找到预定义版本分支"
+          
+          # 首先尝试构建FFmpeg n5.1版本以生成libavformat.so.59/60/62, libavcodec.so.59/60/62, libavutil.so.57/58/60
+          if git checkout n5.1 2>/dev/null || git checkout release/5.1 2>/dev/null; then
             echo "正在构建FFmpeg 5.1以生成版本62库..."
             make clean 2>/dev/null || true
             rm -rf build 2>/dev/null || true
@@ -132,7 +126,6 @@ jobs:
               --enable-libass \
               --enable-libfreetype \
               --enable-libfribidi \
-              --enable-libgnutls \
               --enable-libxvid \
               --enable-libaom \
               --enable-libdav1d \
@@ -144,7 +137,7 @@ jobs:
             make -j$(nproc)
             sudo make install
           else
-            echo "FFmpeg 5.1 release branch not found, using master"
+            echo "FFmpeg 5.1 release tag not found, using master"
             git checkout master
             ./configure \
               --prefix=$INSTALL_ROOT \
@@ -161,7 +154,6 @@ jobs:
               --enable-libass \
               --enable-libfreetype \
               --enable-libfribidi \
-              --enable-libgnutls \
               --enable-libxvid \
               --enable-libaom \
               --enable-libdav1d \
@@ -175,7 +167,7 @@ jobs:
           fi
           
           # 检出FFmpeg 4.4以生成版本60库
-          if git checkout release/4.4; then
+          if git checkout n4.4 2>/dev/null || git checkout release/4.4 2>/dev/null; then
             echo "正在构建FFmpeg 4.4以生成版本60库..."
             make clean 2>/dev/null || true
             rm -rf build_temp 2>/dev/null || true
@@ -194,7 +186,6 @@ jobs:
               --enable-libass \
               --enable-libfreetype \
               --enable-libfribidi \
-              --enable-libgnutls \
               --enable-libxvid \
               --enable-libaom \
               --enable-libdav1d \
@@ -206,48 +197,57 @@ jobs:
             make -j$(nproc)
             make install
             # 复制4.4版本的库到主目录
-            cp $INSTALL_ROOT/temp_44/lib/libavformat.so.60 $INSTALL_ROOT/lib/ 2>/dev/null || true
-            cp $INSTALL_ROOT/temp_44/lib/libavcodec.so.60 $INSTALL_ROOT/lib/ 2>/dev/null || true
-            cp $INSTALL_ROOT/temp_44/lib/libavutil.so.60 $INSTALL_ROOT/lib/ 2>/dev/null || true
+            cp $INSTALL_ROOT/temp_44/lib/libavformat.so* $INSTALL_ROOT/lib/ 2>/dev/null || true
+            cp $INSTALL_ROOT/temp_44/lib/libavcodec.so* $INSTALL_ROOT/lib/ 2>/dev/null || true
+            cp $INSTALL_ROOT/temp_44/lib/libavutil.so* $INSTALL_ROOT/lib/ 2>/dev/null || true
           fi
           
-          # 返回到5.1分支获取正确版本信息
-          git checkout release/5.1 2>/dev/null || git checkout master
+          # 返回到主分支获取正确版本信息
+          git checkout master 2>/dev/null || git checkout n5.1 2>/dev/null || echo "使用当前分支"
           
           # 确保所有需要的库版本符号链接都存在
           cd $INSTALL_ROOT/lib
           echo "创建库版本符号链接..."
           
-          # 生成libavformat.so.62, libavformat.so.60
-          # 检查当前安装的版本并创建符号链接
+          # 检查并生成libavformat.so.62, libavformat.so.60
           for file in libavformat.so.*; do
             if [[ $file =~ ^libavformat\.so\.([0-9]+)$ ]]; then
               version=${BASH_REMATCH[1]}
-              ln -sf $file libavformat.so.62 2>/dev/null || true
-              ln -sf $file libavformat.so.60 2>/dev/null || true
+              if [ "$version" -ge 60 ]; then
+                ln -sf $file libavformat.so.62 2>/dev/null || true
+                ln -sf $file libavformat.so.60 2>/dev/null || true
+              fi
               break
             fi
           done
           
-          # 生成libavutil.so.60, libavutil.so.58
+          # 检查并生成libavutil.so.60, libavutil.so.58
           for file in libavutil.so.*; do
             if [[ $file =~ ^libavutil\.so\.([0-9]+)$ ]]; then
               version=${BASH_REMATCH[1]}
-              ln -sf $file libavutil.so.60 2>/dev/null || true
-              ln -sf $file libavutil.so.58 2>/dev/null || true
+              if [ "$version" -ge 58 ]; then
+                ln -sf $file libavutil.so.60 2>/dev/null || true
+                ln -sf $file libavutil.so.58 2>/dev/null || true
+              fi
               break
             fi
           done
           
-          # 生成libavcodec.so.62, libavcodec.so.60
+          # 检查并生成libavcodec.so.62, libavcodec.so.60
           for file in libavcodec.so.*; do
             if [[ $file =~ ^libavcodec\.so\.([0-9]+)$ ]]; then
               version=${BASH_REMATCH[1]}
-              ln -sf $file libavcodec.so.62 2>/dev/null || true
-              ln -sf $file libavcodec.so.60 2>/dev/null || true
+              if [ "$version" -ge 60 ]; then
+                ln -sf $file libavcodec.so.62 2>/dev/null || true
+                ln -sf $file libavcodec.so.60 2>/dev/null || true
+              fi
               break
             fi
           done
+          
+          # 显示生成的库文件
+          echo "生成的库文件:"
+          ls -la libavformat.so* libavcodec.so* libavutil.so* 2>/dev/null || echo "未找到预期的库文件"
 
       # 🧩 修补 ELF 解释器
       - name: 修补 ELF 可执行文件
