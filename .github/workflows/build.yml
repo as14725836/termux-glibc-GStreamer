@@ -23,6 +23,15 @@ jobs:
       - name: 检出 workflow 仓库
         uses: actions/checkout@v4
 
+      - name: 修复依赖
+        run: |
+          sudo apt clean
+          sudo apt autoclean
+          sudo rm -rf /var/lib/apt/lists/*
+          sudo apt update
+          sudo rm /var/lib/apt/lists/lock
+          sudo rm /var/cache/apt/archives/lock
+
       # 📦 安装基础依赖
       - name: 安装基础依赖
         run: |
