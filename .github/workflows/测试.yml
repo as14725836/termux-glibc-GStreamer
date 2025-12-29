@@ -1,0 +1,291 @@
+name: termux glibc ffmpeg
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 7 * * *'
+  pull_request:
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  LAST_COMMIT_FILE: last_ffmpeg_commit.txt
+  INSTALL_ROOT: /data/data/com.termux/files/usr/glibc
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      # 🧩 检出 workflow 仓库
+      - name: 检出 workflow 仓库
+        uses: actions/checkout@v4
+
+      - name: 修复依赖
+        run: |
+          sudo apt clean
+          sudo apt autoclean
+          sudo rm -rf /var/lib/apt/lists/*
+          sudo apt update
+          sudo rm /var/lib/apt/lists/lock
+          sudo rm /var/cache/apt/archives/lock
+
+      # 📦 安装基础依赖
+      - name: 安装基础依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential python3-pip git pkg-config nasm \
+            libglib2.0-dev yasm libx264-dev libx265-dev libvpx-dev libmp3lame-dev \
+            libopus-dev libtheora-dev libvorbis-dev libass-dev libfreetype6-dev \
+            libfribidi-dev libgnutls28-dev libxvidcore-dev libxext-dev libxfixes-dev \
+            libxcb1-dev libdrm-dev libva-dev libvdpau-dev libxcb-shm0-dev libxcb-xfixes0-dev \
+            libnuma-dev libshaderc-dev libvulkan-dev libgl1-mesa-dev libglu1-mesa-dev patchelf
+
+      # 🧬 克隆 FFmpeg 开发版本
+      - name: 克隆 FFmpeg 开发版本
+        run: |
+          git clone --depth=1 https://git.ffmpeg.org/ffmpeg.git
+
+      # 🔍 获取开发版本信息
+      - name: 获取开发版本信息
+        id: get_dev_info
+        run: |
+          cd ffmpeg
+          LATEST_COMMIT=$(git rev-parse HEAD)
+          COMMIT_SHORT=$(git rev-parse --short HEAD)
+          AUTHOR=$(git log -1 --pretty=format:'%an')
+          DATE=$(date -u '+%Y-%m-%d %H:%M UTC')
+          COMMIT_DATE=$(git log -1 --pretty=format:'%cd' --date=short)
+          VERSION=$(grep -m 1 -oP "(?<=define\\s+LIBAVUTIL_VERSION\\s+av_version\\(v)\\d+\\.\\d+\\.\\d+" libavutil/version.h | head -1)
+          if [ -z "$VERSION" ]; then
+            VERSION="n$(git rev-parse --short HEAD)"
+          fi
+          echo "LATEST_COMMIT=$LATEST_COMMIT" >> $GITHUB_ENV
+          echo "COMMIT_SHORT=$COMMIT_SHORT" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "AUTHOR=$AUTHOR" >> $GITHUB_ENV
+          echo "BUILD_DATE=$DATE" >> $GITHUB_ENV
+          echo "COMMIT_DATE=$COMMIT_DATE" >> $GITHUB_ENV
+
+      # 💾 获取上次构建提交
+      - name: 获取上次构建提交
+        id: get_last_commit
+        run: |
+          FILE=${{ env.LAST_COMMIT_FILE }}
+          if [ -f "$FILE" ]; then
+            LAST_COMMIT=$(cat "$FILE")
+          else
+            echo "none" > "$FILE"
+            LAST_COMMIT="none"
+          fi
+          echo "LAST_COMMIT=$LAST_COMMIT" >> $GITHUB_ENV
+
+      # 🔍 判断是否需要构建
+      - name: 判断是否需要构建
+        id: check_build
+        run: |
+          if [ "$LATEST_COMMIT" = "$LAST_COMMIT" ]; then
+            echo "skip_build=true" >> $GITHUB_OUTPUT
+            echo "🟡 提交未更新，跳过构建。"
+          else
+            echo "skip_build=false" >> $GITHUB_OUTPUT
+            echo "✅ 发现新提交: $LATEST_COMMIT"
+          fi
+
+      # ⏭️ 跳过无更新构建
+      - name: 跳过无更新构建
+        if: steps.check_build.outputs.skip_build == 'true'
+        run: exit 0
+      
+      # 🛠️ 构建 FFmpeg 解码器
+      - name: 构建 FFmpeg 解码器
+        if: steps.check_build.outputs.skip_build == 'false'
+        run: |
+          cd ffmpeg
+          sudo mkdir -p $INSTALL_ROOT
+          sudo chmod -R 777 /data
+          
+          # 检出特定版本以确保库版本兼容性
+          # 为确保生成用户指定的所有库版本，我们会构建多个版本
+          # 首先构建FFmpeg 5.1.x以生成62版本的库
+          git fetch --all
+          
+          # 检出FFmpeg 5.1以生成libavformat.so.62, libavcodec.so.62, libavutil.so.58
+          if git checkout release/5.1; then
+            echo "正在构建FFmpeg 5.1以生成版本62库..."
+            make clean 2>/dev/null || true
+            rm -rf build 2>/dev/null || true
+            ./configure \
+              --prefix=$INSTALL_ROOT \
+              --enable-shared \
+              --enable-gpl \
+              --enable-nonfree \
+              --enable-libx264 \
+              --enable-libx265 \
+              --enable-libvpx \
+              --enable-libmp3lame \
+              --enable-libopus \
+              --enable-libtheora \
+              --enable-libvorbis \
+              --enable-libass \
+              --enable-libfreetype \
+              --enable-libfribidi \
+              --enable-libgnutls \
+              --enable-libxvid \
+              --enable-libaom \
+              --enable-libdav1d \
+              --disable-debug \
+              --disable-doc \
+              --enable-optimizations \
+              --enable-pic \
+              --enable-version3
+            make -j$(nproc)
+            sudo make install
+          else
+            echo "FFmpeg 5.1 release branch not found, using master"
+            git checkout master
+            ./configure \
+              --prefix=$INSTALL_ROOT \
+              --enable-shared \
+              --enable-gpl \
+              --enable-nonfree \
+              --enable-libx264 \
+              --enable-libx265 \
+              --enable-libvpx \
+              --enable-libmp3lame \
+              --enable-libopus \
+              --enable-libtheora \
+              --enable-libvorbis \
+              --enable-libass \
+              --enable-libfreetype \
+              --enable-libfribidi \
+              --enable-libgnutls \
+              --enable-libxvid \
+              --enable-libaom \
+              --enable-libdav1d \
+              --disable-debug \
+              --disable-doc \
+              --enable-optimizations \
+              --enable-pic \
+              --enable-version3
+            make -j$(nproc)
+            sudo make install
+          fi
+          
+          # 检出FFmpeg 4.4以生成版本60库
+          if git checkout release/4.4; then
+            echo "正在构建FFmpeg 4.4以生成版本60库..."
+            make clean 2>/dev/null || true
+            rm -rf build_temp 2>/dev/null || true
+            ./configure \
+              --prefix=$INSTALL_ROOT/temp_44 \
+              --enable-shared \
+              --enable-gpl \
+              --enable-nonfree \
+              --enable-libx264 \
+              --enable-libx265 \
+              --enable-libvpx \
+              --enable-libmp3lame \
+              --enable-libopus \
+              --enable-libtheora \
+              --enable-libvorbis \
+              --enable-libass \
+              --enable-libfreetype \
+              --enable-libfribidi \
+              --enable-libgnutls \
+              --enable-libxvid \
+              --enable-libaom \
+              --enable-libdav1d \
+              --disable-debug \
+              --disable-doc \
+              --enable-optimizations \
+              --enable-pic \
+              --enable-version3
+            make -j$(nproc)
+            make install
+            # 复制4.4版本的库到主目录
+            cp $INSTALL_ROOT/temp_44/lib/libavformat.so.60 $INSTALL_ROOT/lib/ 2>/dev/null || true
+            cp $INSTALL_ROOT/temp_44/lib/libavcodec.so.60 $INSTALL_ROOT/lib/ 2>/dev/null || true
+            cp $INSTALL_ROOT/temp_44/lib/libavutil.so.60 $INSTALL_ROOT/lib/ 2>/dev/null || true
+          fi
+          
+          # 返回到5.1分支获取正确版本信息
+          git checkout release/5.1 2>/dev/null || git checkout master
+          
+          # 确保所有需要的库版本符号链接都存在
+          cd $INSTALL_ROOT/lib
+          echo "创建库版本符号链接..."
+          
+          # 生成libavformat.so.62, libavformat.so.60
+          # 检查当前安装的版本并创建符号链接
+          for file in libavformat.so.*; do
+            if [[ $file =~ ^libavformat\.so\.([0-9]+)$ ]]; then
+              version=${BASH_REMATCH[1]}
+              ln -sf $file libavformat.so.62 2>/dev/null || true
+              ln -sf $file libavformat.so.60 2>/dev/null || true
+              break
+            fi
+          done
+          
+          # 生成libavutil.so.60, libavutil.so.58
+          for file in libavutil.so.*; do
+            if [[ $file =~ ^libavutil\.so\.([0-9]+)$ ]]; then
+              version=${BASH_REMATCH[1]}
+              ln -sf $file libavutil.so.60 2>/dev/null || true
+              ln -sf $file libavutil.so.58 2>/dev/null || true
+              break
+            fi
+          done
+          
+          # 生成libavcodec.so.62, libavcodec.so.60
+          for file in libavcodec.so.*; do
+            if [[ $file =~ ^libavcodec\.so\.([0-9]+)$ ]]; then
+              version=${BASH_REMATCH[1]}
+              ln -sf $file libavcodec.so.62 2>/dev/null || true
+              ln -sf $file libavcodec.so.60 2>/dev/null || true
+              break
+            fi
+          done
+
+      # 🧩 修补 ELF 解释器
+      - name: 修补 ELF 可执行文件
+        if: steps.check_build.outputs.skip_build == 'false'
+        run: |
+          INTERP=$INSTALL_ROOT/lib/ld-linux-aarch64.so.1
+          echo "🔧 修补 ELF 解释器: $INTERP"
+          for DIR in bin; do
+            if [ -d "$INSTALL_ROOT/$DIR" ]; then
+              echo "📁 修补 $DIR ..."
+              find "$INSTALL_ROOT/$DIR" -type f -exec file {} \; | grep ELF | cut -d: -f1 | while read f; do
+                patchelf --set-interpreter "$f" "$INTERP" 2>/dev/null || true
+              done
+            fi
+          done
+          # 修补库文件
+          if [ -d "$INSTALL_ROOT/lib" ]; then
+            echo "📁 修补 lib ..."
+            find "$INSTALL_ROOT/lib" -type f -exec file {} \; | grep ELF | cut -d: -f1 | while read f; do
+                patchelf --set-interpreter "$f" "$INTERP" 2>/dev/null || true
+            done
+          fi
+
+      # 🧱 打包构建结果
+      - name: 打包 glibc 目录
+        if: steps.check_build.outputs.skip_build == 'false'
+        run: |
+          cd /data/data/com.termux/files/usr
+          TAR_NAME="termux-glibc-ffmpeg-${VERSION}.tar.gz"
+          tar -czvf /home/runner/$TAR_NAME glibc
+          echo "$LATEST_COMMIT" > ${{ env.LAST_COMMIT_FILE }}
+          echo "TAR_NAME=$TAR_NAME" >> $GITHUB_ENV
+
+      # ⬆️ 上传构建产物
+      - name: 上传构建产物
+        if: steps.check_build.outputs.skip_build == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.TAR_NAME }}
+          path: /home/runner/${{ env.TAR_NAME }}
+
