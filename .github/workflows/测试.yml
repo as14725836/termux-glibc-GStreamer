@@ -32,13 +32,14 @@ jobs:
             libopus-dev libtheora-dev libvorbis-dev libass-dev libfreetype6-dev \
             libfribidi-dev libgnutls28-dev libxvidcore-dev libxext-dev libxfixes-dev \
             libxcb1-dev libdrm-dev libva-dev libvdpau-dev libxcb-shm0-dev libxcb-xfixes0-dev \
-            libnuma-dev libvulkan-dev libgl1-mesa-dev libglu1-mesa-dev patchelf
+            libnuma-dev cmake libvulkan-dev libgl1-mesa-dev libglu1-mesa-dev patchelf
 
       # 📦 安装或构建 libaom (需要 >= 2.0.0)
       - name: 安装 libaom >= 2.0.0
         run: |
           # 克隆并构建最新版本的 aom
           cd /tmp
+          rm -rf aom
           git clone --depth=1 https://aomedia.googlesource.com/aom
           cd aom
           mkdir build && cd build
