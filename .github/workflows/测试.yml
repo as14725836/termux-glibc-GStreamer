@@ -32,8 +32,21 @@ jobs:
             libopus-dev libtheora-dev libvorbis-dev libass-dev libfreetype6-dev \
             libfribidi-dev libgnutls28-dev libxvidcore-dev libxext-dev libxfixes-dev \
             libxcb1-dev libdrm-dev libva-dev libvdpau-dev libxcb-shm0-dev libxcb-xfixes0-dev \
-            libnuma-dev libshaderc-dev libvulkan-dev libgl1-mesa-dev libglu1-mesa-dev patchelf
+            libnuma-dev libvulkan-dev libgl1-mesa-dev libglu1-mesa-dev patchelf
 
+      # 📦 安装或构建 libaom (需要 >= 2.0.0)
+      - name: 安装 libaom >= 2.0.0
+        run: |
+          # 克隆并构建最新版本的 aom
+          cd /tmp
+          git clone --depth=1 https://aomedia.googlesource.com/aom
+          cd aom
+          mkdir build && cd build
+          cmake -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_SHARED_LIBS=1 -DENABLE_TESTS=0 -DENABLE_DOCS=0 -DENABLE_examples=0 ..
+          make -j$(nproc)
+          sudo make install
+          sudo ldconfig
+          
       # 🧬 克隆 FFmpeg 开发版本
       - name: 克隆 FFmpeg 开发版本
         run: |
@@ -104,11 +117,11 @@ jobs:
           
           # 检查可用的远程分支
           echo "可用的FFmpeg分支:"
-          git branch -r | grep -E "release|n5\.1|n4\.4" || echo "未找到预定义版本分支"
+          git branch -r | grep -E "release|n5\.1|n4\.4|n6\.0" || echo "未找到预定义版本分支"
           
-          # 首先尝试构建FFmpeg n5.1版本以生成libavformat.so.59/60/62, libavcodec.so.59/60/62, libavutil.so.57/58/60
-          if git checkout n5.1 2>/dev/null || git checkout release/5.1 2>/dev/null; then
-            echo "正在构建FFmpeg 5.1以生成版本62库..."
+          # 首先尝试构建FFmpeg n6.0或n5.1版本以生成libavformat.so.60/62, libavcodec.so.60/62, libavutil.so.58/60
+          if git checkout n6.0 2>/dev/null || git checkout n5.1 2>/dev/null || git checkout release/5.1 2>/dev/null; then
+            echo "正在构建FFmpeg 5.x以生成版本60/62库..."
             make clean 2>/dev/null || true
             rm -rf build 2>/dev/null || true
             ./configure \
@@ -137,7 +150,7 @@ jobs:
             make -j$(nproc)
             sudo make install
           else
-            echo "FFmpeg 5.1 release tag not found, using master"
+            echo "FFmpeg 5.1/6.0 release tag not found, using master"
             git checkout master
             ./configure \
               --prefix=$INSTALL_ROOT \
@@ -203,7 +216,7 @@ jobs:
           fi
           
           # 返回到主分支获取正确版本信息
-          git checkout master 2>/dev/null || git checkout n5.1 2>/dev/null || echo "使用当前分支"
+          git checkout master 2>/dev/null || git checkout n6.0 2>/dev/null || git checkout n5.1 2>/dev/null || echo "使用当前分支"
           
           # 确保所有需要的库版本符号链接都存在
           cd $INSTALL_ROOT/lib
