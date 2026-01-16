@@ -1,4 +1,4 @@
-name: termux glibc GStreamer Decoders (aarch64, Dev + libvpx)
+name: termux glibc OpenGL GStreamer Decoders (aarch64, Dev + libvpx)
 
 on:
   workflow_dispatch:
