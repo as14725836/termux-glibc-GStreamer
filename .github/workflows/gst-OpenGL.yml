@@ -41,9 +41,8 @@ jobs:
             libtheora-dev libx264-dev libx265-dev libvpx-dev
            sudo apt install libx11-dev libxrandr-dev libxcb-randr0-dev \
                  libxcb-xfixes0-dev libxcb-sync-dev \
-                 libxcb-shm0-dev libxcb-present-dev \
+                 libxcb-shm0-dev libxcb-util-dev libxcb-present-dev \
                  libxshmfence-dev
-            sudo apt install libxcb-util-dev libxcb-keysyms-dev
                  
       # ⚙️ 升级 Meson 和 Ninja
       - name: 升级 Meson 和 Ninja
