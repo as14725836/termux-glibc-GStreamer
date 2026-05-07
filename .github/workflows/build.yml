@@ -1,4 +1,4 @@
-name: termux glibc GStreamer Decoders (aarch64, Dev + libvpx + aom AV1)
+name: termux glibc GStreamer Decoders (aarch64, Dev + libvpx + aom AV1 + de265 HEVC + DTLS)
 
 on:
   workflow_dispatch:
@@ -32,14 +32,14 @@ jobs:
           sudo rm /var/lib/apt/lists/lock
           sudo rm /var/cache/apt/archives/lock
 
-      # 📦 安装基础依赖（新增 aom 编译依赖）
+      # 📦 安装基础依赖（新增 de265 / openssl DTLS 依赖）
       - name: 安装基础依赖
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential python3-pip git pkg-config nasm cmake \
             libglib2.0-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
             liborc-0.4-dev libxv-dev libx11-dev libasound2-dev libpulse-dev patchelf \
-            libtheora-dev libx264-dev libx265-dev libvpx-dev
+            libtheora-dev libx264-dev libx265-dev libvpx-dev libde265-dev libssl-dev autoconf automake libtool
       # ⚙️ 升级 Meson 和 Ninja
       - name: 升级 Meson 和 Ninja
         run: |
@@ -118,10 +118,27 @@ jobs:
           sudo make install
           echo "✅ libvpx v1.14.0 构建完成"
 
-      # ==============================================
-            # ==============================================
+      # 🧱 构建 libde265 (HEVC 解码器依赖)
+      - name: 构建 libde265
+        if: steps.check_build.outputs.skip_build == 'false'
+        run: |
+          echo "📦 构建 libde265 HEVC..."
+          git clone --depth=1 https://github.com/strukturag/libde265.git
+          cd libde265
+          ./autogen.sh
+          ./configure \
+            --prefix=${{ env.INSTALL_ROOT }} \
+            --libdir=${{ env.INSTALL_ROOT }}/lib \
+            --host=aarch64-linux-gnu \
+            --enable-shared \
+            --disable-static \
+            --disable-examples
+          make -j$(nproc)
+          sudo make install
+          sudo ldconfig
+          echo "✅ libde265 编译安装完成"
+
       # 修复版：编译 libaom (aarch64) 加权限修复
-      # ==============================================
       - name: 构建 libaom (AV1 解码依赖)
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
@@ -145,18 +162,14 @@ jobs:
             -DAOM_TARGET_CPU=arm64 \
             -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON
           make -j$(nproc)
-          # 关键：sudo 全局安装，解决权限不足
           sudo make install
-          # 手动补权限
           sudo chmod -R 755 ${{ env.INSTALL_ROOT }}/lib
           sudo chmod -R 755 ${{ env.INSTALL_ROOT }}/include
           echo "✅ libaom 编译安装完成"
-          # 刷新库与pkgconfig
           export PKG_CONFIG_PATH=${{ env.INSTALL_ROOT }}/lib/pkgconfig:$PKG_CONFIG_PATH
           sudo ldconfig
 
-
-      # 🛠️ 构建 GStreamer 解码器（关键：添加 -Daom=enabled）
+      # 🛠️ 构建 GStreamer 解码器（新增 de265 / dtls）
       - name: 构建 GStreamer 解码器
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
@@ -164,7 +177,6 @@ jobs:
           git submodule update --init --recursive
           sudo mkdir -p $INSTALL_ROOT
           sudo chmod -R 777 /data
-          # PKG_CONFIG 优先读取我们自定义 glibc 目录
           export PKG_CONFIG_PATH=${{ env.INSTALL_ROOT }}/lib/pkgconfig:$PKG_CONFIG_PATH
           meson setup build \
             --prefix=$INSTALL_ROOT \
@@ -189,6 +201,8 @@ jobs:
             -Dgst-plugins-bad:hip=disabled \
             -Dgst-plugins-bad:nvcodec=disabled \
             -Dgst-plugins-bad:aom=enabled \
+            -Dgst-plugins-bad:de265=enabled \
+            -Dgst-plugins-bad:dtls=enabled \
             -Dgst-plugins-base:gl=disabled \
             -Dgst-plugins-base:alsa=disabled \
             -Dgst-plugins-base:theora=enabled \
@@ -201,7 +215,7 @@ jobs:
             --buildtype=release
           ninja -C build -j$(nproc)
           ninja -C build install
-          echo "✅ GStreamer 编译完成，已启用 aom + av1dec"
+          echo "✅ GStreamer 编译完成，已启用 aom+de265+dtls+vpx"
 
       # 🧩 修补 ELF 解释器
       - name: 修补 ELF 可执行文件
@@ -251,7 +265,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ env.VERSION }}
-          name: "GStreamer Decoders ${{ env.VERSION }} (aarch64, Termux glibc + AOM AV1)"
+          name: "GStreamer Decoders ${{ env.VERSION }} (aarch64, Termux glibc + AOM AV1 + de265 HEVC + DTLS)"
           body: |
             ## 🎯 GStreamer 开发版本构建
             
@@ -273,17 +287,21 @@ jobs:
             - ✅ **GPL 插件**
             - ✅ **开发工具**
             - ✅ **AOM AV1 解码器 av1dec**
+            - ✅ **libde265 HEVC 解码器 libde265dec**
+            - ✅ **DTLS 解密 dtlsdec**
             - ✅ **libvpx VP8/VP9**
             - ❌ **RTSP 服务器** (已禁用)
             - 🏗️ **构建类型**: release
             
             ### 📦 文件信息
             - **文件名**: `${{ env.TAR_NAME }}`
-            - **包含**: 完整 GStreamer + libaom + av1dec
+            - **包含**: 完整 GStreamer + libaom + libde265 + DTLS + libvpx
             
-            ### 📥 验证 AV1 解码器
+            ### 📥 解码器验证命令
             ```bash
             gst-inspect-1.0 av1dec
+            gst-inspect-1.0 libde265dec
+            gst-inspect-1.0 dtlsdec
             ```
           files: /home/runner/${{ env.TAR_NAME }}
         env:
