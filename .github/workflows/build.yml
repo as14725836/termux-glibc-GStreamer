@@ -118,7 +118,7 @@ jobs:
           sudo make install
           echo "✅ libvpx v1.14.0 构建完成"
 
-            - name: 构建 libde265 (HEVC 解码器依赖)
+      - name: 构建 libde265 (HEVC 解码器依赖)
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
           echo "📦 构建 libde265 HEVC..."
