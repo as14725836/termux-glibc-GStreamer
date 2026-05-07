@@ -119,12 +119,15 @@ jobs:
           echo "✅ libvpx v1.14.0 构建完成"
 
       # ==============================================
-      # 新增：编译 libaom 静态/动态库 (aarch64)
+            # ==============================================
+      # 修复版：编译 libaom (aarch64) 加权限修复
       # ==============================================
       - name: 构建 libaom (AV1 解码依赖)
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
           echo "📦 构建 libaom AV1 Codec..."
+          sudo mkdir -p ${{ env.INSTALL_ROOT }}
+          sudo chmod 755 ${{ env.INSTALL_ROOT }}
           git clone --depth=1 https://aomedia.googlesource.com/aom
           cd aom
           mkdir -p build && cd build
@@ -133,17 +136,25 @@ jobs:
             -DBUILD_SHARED_LIBS=ON \
             -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_ROOT }} \
             -DCMAKE_INSTALL_LIBDIR=lib \
+            -DCMAKE_INSTALL_BINDIR=bin \
+            -DCMAKE_INSTALL_INCLUDEDIR=include \
             -DENABLE_AV1=ON \
             -DENABLE_TESTS=OFF \
             -DENABLE_EXAMPLES=OFF \
             -DCONFIG_RUNTIME_CPU_DETECT=ON \
-            -DAOM_TARGET_CPU=arm64
+            -DAOM_TARGET_CPU=arm64 \
+            -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON
           make -j$(nproc)
-          make install
+          # 关键：sudo 全局安装，解决权限不足
+          sudo make install
+          # 手动补权限
+          sudo chmod -R 755 ${{ env.INSTALL_ROOT }}/lib
+          sudo chmod -R 755 ${{ env.INSTALL_ROOT }}/include
           echo "✅ libaom 编译安装完成"
-          # 刷新库路径，让 meson 能找到 aom
-          echo "${{ env.INSTALL_ROOT }}/lib" | sudo tee /etc/ld.so.conf.d/glibc-aom.conf
+          # 刷新库与pkgconfig
+          export PKG_CONFIG_PATH=${{ env.INSTALL_ROOT }}/lib/pkgconfig:$PKG_CONFIG_PATH
           sudo ldconfig
+
 
       # 🛠️ 构建 GStreamer 解码器（关键：添加 -Daom=enabled）
       - name: 构建 GStreamer 解码器
