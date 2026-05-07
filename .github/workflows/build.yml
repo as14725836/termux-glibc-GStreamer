@@ -187,7 +187,6 @@ jobs:
             -Dgood=enabled \
             -Dugly=enabled \
             -Dbad=enabled \
-            -Dde265=enabled \
             -Dlibav=enabled \
             -Dgpl=enabled \
             -Ddefault_library=shared \
@@ -203,6 +202,7 @@ jobs:
             -Dgst-plugins-bad:hip=disabled \
             -Dgst-plugins-bad:nvcodec=disabled \
             -Dgst-plugins-bad:aom=enabled \
+            -Dgst-plugins-bad:libde265=enabled \
             -Dgst-plugins-bad:dtls=enabled \
             -Dgst-plugins-base:gl=disabled \
             -Dgst-plugins-base:alsa=disabled \
