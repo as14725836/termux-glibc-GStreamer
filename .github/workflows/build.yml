@@ -1,9 +1,9 @@
-name: termux glibc GStreamer Decoders (aarch64, Dev + libvpx)
+name: termux glibc GStreamer Decoders (aarch64, Dev + libvpx + aom AV1)
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 7 * * *'
+    schedule:
+      - cron: '0 7 * * *'
   pull_request:
 
 permissions:
@@ -32,11 +32,11 @@ jobs:
           sudo rm /var/lib/apt/lists/lock
           sudo rm /var/cache/apt/archives/lock
 
-      # 📦 安装基础依赖
+      # 📦 安装基础依赖（新增 aom 编译依赖）
       - name: 安装基础依赖
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential python3-pip git pkg-config nasm \
+          sudo apt-get install -y build-essential python3-pip git pkg-config nasm cmake \
             libglib2.0-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
             liborc-0.4-dev libxv-dev libx11-dev libasound2-dev libpulse-dev patchelf \
             libtheora-dev libx264-dev libx265-dev libvpx-dev
@@ -116,8 +116,36 @@ jobs:
           make -j$(nproc)
           sudo mkdir -p ${{ env.INSTALL_ROOT }}/lib/gstreamer-1.0
           sudo make install
-          echo "✅ libvpx v1.14.0 构建完成并安装到 GStreamer 插件目录"
-      # 🛠️ 构建 GStreamer 解码器
+          echo "✅ libvpx v1.14.0 构建完成"
+
+      # ==============================================
+      # 新增：编译 libaom 静态/动态库 (aarch64)
+      # ==============================================
+      - name: 构建 libaom (AV1 解码依赖)
+        if: steps.check_build.outputs.skip_build == 'false'
+        run: |
+          echo "📦 构建 libaom AV1 Codec..."
+          git clone --depth=1 https://aomedia.googlesource.com/aom
+          cd aom
+          mkdir -p build && cd build
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=ON \
+            -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_ROOT }} \
+            -DCMAKE_INSTALL_LIBDIR=lib \
+            -DENABLE_AV1=ON \
+            -DENABLE_TESTS=OFF \
+            -DENABLE_EXAMPLES=OFF \
+            -DCONFIG_RUNTIME_CPU_DETECT=ON \
+            -DAOM_TARGET_CPU=arm64
+          make -j$(nproc)
+          make install
+          echo "✅ libaom 编译安装完成"
+          # 刷新库路径，让 meson 能找到 aom
+          echo "${{ env.INSTALL_ROOT }}/lib" | sudo tee /etc/ld.so.conf.d/glibc-aom.conf
+          sudo ldconfig
+
+      # 🛠️ 构建 GStreamer 解码器（关键：添加 -Daom=enabled）
       - name: 构建 GStreamer 解码器
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
@@ -125,20 +153,45 @@ jobs:
           git submodule update --init --recursive
           sudo mkdir -p $INSTALL_ROOT
           sudo chmod -R 777 /data
+          # PKG_CONFIG 优先读取我们自定义 glibc 目录
+          export PKG_CONFIG_PATH=${{ env.INSTALL_ROOT }}/lib/pkgconfig:$PKG_CONFIG_PATH
           meson setup build \
             --prefix=$INSTALL_ROOT \
             --libdir=lib \
-            -Dbase=enabled -Dpackage-origin="Termux-Glibc" -Dgood=enabled -Dugly=enabled -Dbad=enabled \
-            -Dlibav=enabled -Dgpl=enabled -Ddefault_library=shared \
-            -Dtests=disabled -Ddoc=disabled -Dexamples=disabled \
-            -Dpython=disabled -Dnls=disabled -Dgst-plugins-good:pulse=enabled -Dgst-plugins-good:oss4=disabled -Dgst-plugins-good:oss=disabled -Dgst-plugins-good:vpx=enabled \
-            -Dgst-plugins-bad:hip=disabled -Dgst-plugins-bad:nvcodec=disabled \
-            -Dgst-plugins-base:gl=disabled -Dgst-plugins-base:alsa=disabled -Dgst-plugins-base:theora=enabled -Dgst-plugins-base:x11=enabled -Dintrospection=disabled \
-            -Dgst-full=enabled -Dgst-full-plugins='*' \
-            -Ddevtools=enabled -Drtsp_server=disabled \
+            -Dbase=enabled \
+            -Dpackage-origin="Termux-Glibc" \
+            -Dgood=enabled \
+            -Dugly=enabled \
+            -Dbad=enabled \
+            -Dlibav=enabled \
+            -Dgpl=enabled \
+            -Ddefault_library=shared \
+            -Dtests=disabled \
+            -Ddoc=disabled \
+            -Dexamples=disabled \
+            -Dpython=disabled \
+            -Dnls=disabled \
+            -Dgst-plugins-good:pulse=enabled \
+            -Dgst-plugins-good:oss4=disabled \
+            -Dgst-plugins-good:oss=disabled \
+            -Dgst-plugins-good:vpx=enabled \
+            -Dgst-plugins-bad:hip=disabled \
+            -Dgst-plugins-bad:nvcodec=disabled \
+            -Dgst-plugins-bad:aom=enabled \
+            -Dgst-plugins-base:gl=disabled \
+            -Dgst-plugins-base:alsa=disabled \
+            -Dgst-plugins-base:theora=enabled \
+            -Dgst-plugins-base:x11=enabled \
+            -Dintrospection=disabled \
+            -Dgst-full=enabled \
+            -Dgst-full-plugins='*' \
+            -Ddevtools=enabled \
+            -Drtsp_server=disabled \
             --buildtype=release
           ninja -C build -j$(nproc)
           ninja -C build install
+          echo "✅ GStreamer 编译完成，已启用 aom + av1dec"
+
       # 🧩 修补 ELF 解释器
       - name: 修补 ELF 可执行文件
         if: steps.check_build.outputs.skip_build == 'false'
@@ -153,6 +206,7 @@ jobs:
               done
             fi
           done
+
       # 🧱 打包构建结果
       - name: 打包 glibc 目录
         if: steps.check_build.outputs.skip_build == 'false'
@@ -162,6 +216,7 @@ jobs:
           tar -czvf /home/runner/$TAR_NAME glibc
           echo "$LATEST_COMMIT" > ${{ env.LAST_COMMIT_FILE }}
           echo "TAR_NAME=$TAR_NAME" >> $GITHUB_ENV
+
       # ⬆️ 上传构建产物
       - name: 上传构建产物
         if: steps.check_build.outputs.skip_build == 'false'
@@ -179,13 +234,13 @@ jobs:
           path: ${{ env.LAST_COMMIT_FILE }}
           retention-days: 365
 
-      # 🚀 发布到 GitHub Release（整合详细信息）
+      # 🚀 发布到 GitHub Release
       - name: 发布到 GitHub Release
         if: steps.check_build.outputs.skip_build == 'false'
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ env.VERSION }}
-          name: "GStreamer Decoders ${{ env.VERSION }} (aarch64, Termux glibc)"
+          name: "GStreamer Decoders ${{ env.VERSION }} (aarch64, Termux glibc + AOM AV1)"
           body: |
             ## 🎯 GStreamer 开发版本构建
             
@@ -206,22 +261,19 @@ jobs:
             - ✅ **LibAV 支持**
             - ✅ **GPL 插件**
             - ✅ **开发工具**
+            - ✅ **AOM AV1 解码器 av1dec**
+            - ✅ **libvpx VP8/VP9**
             - ❌ **RTSP 服务器** (已禁用)
             - 🏗️ **构建类型**: release
             
             ### 📦 文件信息
             - **文件名**: `${{ env.TAR_NAME }}`
-            - **包含**: 完整的 GStreamer 开发版本安装
+            - **包含**: 完整 GStreamer + libaom + av1dec
             
-            ### ⚠️ 注意事项
-            - 此为开发版本，可能包含未稳定的特性
-            - 建议仅用于测试和开发目的
-            - 生产环境请使用稳定版本
-            
-            ### 📥 使用方法
-            1. 下载并解压到 Termux 的 `/data/data/com.termux/files/usr/` 目录
-            2. 设置环境变量: `export GST_PLUGIN_PATH=/data/data/com.termux/files/usr/glibc/lib/gstreamer-1.0`
-            3. 测试: `gst-inspect-1.0 --version`
+            ### 📥 验证 AV1 解码器
+            ```bash
+            gst-inspect-1.0 av1dec
+            ```
           files: /home/runner/${{ env.TAR_NAME }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
