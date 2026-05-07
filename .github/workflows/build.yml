@@ -118,25 +118,26 @@ jobs:
           sudo make install
           echo "✅ libvpx v1.14.0 构建完成"
 
-      # 🧱 构建 libde265 (HEVC 解码器依赖)
-      - name: 构建 libde265
+            - name: 构建 libde265 (HEVC 解码器依赖)
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
           echo "📦 构建 libde265 HEVC..."
           git clone --depth=1 https://github.com/strukturag/libde265.git
           cd libde265
-          ./autogen.sh
-          ./configure \
-            --prefix=${{ env.INSTALL_ROOT }} \
-            --libdir=${{ env.INSTALL_ROOT }}/lib \
-            --host=aarch64-linux-gnu \
-            --enable-shared \
-            --disable-static \
-            --disable-examples
+          mkdir -p build && cd build
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=ON \
+            -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_ROOT }} \
+            -DCMAKE_INSTALL_LIBDIR=lib \
+            -DENABLE_SDL=OFF \
+            -DBUILD_EXAMPLES=OFF \
+            -DBUILD_TESTING=OFF
           make -j$(nproc)
           sudo make install
           sudo ldconfig
           echo "✅ libde265 编译安装完成"
+
 
       # 修复版：编译 libaom (aarch64) 加权限修复
       - name: 构建 libaom (AV1 解码依赖)
