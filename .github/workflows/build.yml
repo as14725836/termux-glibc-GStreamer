@@ -205,7 +205,6 @@ jobs:
             -Dgst-plugins-bad:libde265=enabled \
             -Dgst-plugins-bad:dtls=enabled \
             -Dgst-plugins-base:gl=enabled \
-            -Dgst-plugins-base:glx=enabled \
             -Dgst-plugins-base:gl_platform=glx \
             -Dgst-plugins-base:gl_winsys=x11 \
             -Dgst-plugins-base:alsa=disabled \
