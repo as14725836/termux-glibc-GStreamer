@@ -178,7 +178,6 @@ jobs:
           git submodule update --init --recursive
           sudo mkdir -p $INSTALL_ROOT
           sudo chmod -R 777 /data
-          export CFLAGS="-UHAVE_LIBDRM"
           export PKG_CONFIG_PATH=${{ env.INSTALL_ROOT }}/lib/pkgconfig:$PKG_CONFIG_PATH
           meson setup build \
             --prefix=$INSTALL_ROOT \
@@ -200,11 +199,15 @@ jobs:
             -Dgst-plugins-good:oss4=disabled \
             -Dgst-plugins-good:oss=disabled \
             -Dgst-plugins-good:vpx=enabled \
+            -Dgst-plugins-bad:drm=disabled \
             -Dgst-plugins-bad:hip=disabled \
             -Dgst-plugins-bad:nvcodec=disabled \
             -Dgst-plugins-bad:aom=enabled \
             -Dgst-plugins-bad:libde265=enabled \
             -Dgst-plugins-bad:dtls=enabled \
+            -Dgst-plugins-bad:x11=enabled \
+            -Dgst-plugins-bad:gl=enabled \
+            -Dgst-plugins-base:drm=disabled \
             -Dgst-plugins-base:gl=enabled \
             -Dgst-plugins-base:gl_platform=glx \
             -Dgst-plugins-base:gl_winsys=x11 \
