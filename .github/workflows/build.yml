@@ -178,6 +178,7 @@ jobs:
           git submodule update --init --recursive
           sudo mkdir -p $INSTALL_ROOT
           sudo chmod -R 777 /data
+          export CFLAGS="-UHAVE_LIBDRM"
           export PKG_CONFIG_PATH=${{ env.INSTALL_ROOT }}/lib/pkgconfig:$PKG_CONFIG_PATH
           meson setup build \
             --prefix=$INSTALL_ROOT \
