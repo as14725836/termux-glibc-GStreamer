@@ -19,7 +19,6 @@ jobs:
     runs-on: ubuntu-24.04-arm
 
     steps:
-      # 🧩 检出 workflow 仓库
       - name: 检出 workflow 仓库
         uses: actions/checkout@v4
 
@@ -32,7 +31,6 @@ jobs:
           sudo rm /var/lib/apt/lists/lock
           sudo rm /var/cache/apt/archives/lock
 
-      # 📦 安装基础依赖（新增 de265 / openssl DTLS 依赖）
       - name: 安装基础依赖
         run: |
           sudo apt-get update
@@ -40,16 +38,16 @@ jobs:
             libglib2.0-dev libdrm-dev libgl1-mesa-dev libglx-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
             liborc-0.4-dev libxv-dev libx11-dev libasound2-dev libpulse-dev patchelf \
             libtheora-dev libx264-dev libx265-dev libvpx-dev libde265-dev libssl-dev autoconf automake libtool
-      # ⚙️ 升级 Meson 和 Ninja
+
       - name: 升级 Meson 和 Ninja
         run: |
           pip install --upgrade pip
           pip install --upgrade meson ninja
-      # 🧬 克隆 GStreamer 开发版本
+
       - name: 克隆 GStreamer 开发版本
         run: |
           git clone --depth=1 https://gitlab.freedesktop.org/gstreamer/gstreamer.git
-      # 🔍 获取开发版本信息
+
       - name: 获取开发版本信息
         id: get_dev_info
         run: |
@@ -66,7 +64,7 @@ jobs:
           echo "AUTHOR=$AUTHOR" >> $GITHUB_ENV
           echo "BUILD_DATE=$DATE" >> $GITHUB_ENV
           echo "COMMIT_DATE=$COMMIT_DATE" >> $GITHUB_ENV
-      # 💾 获取上次构建提交
+
       - name: 获取上次构建提交
         id: get_last_commit
         run: |
@@ -78,7 +76,7 @@ jobs:
             LAST_COMMIT="none"
           fi
           echo "LAST_COMMIT=$LAST_COMMIT" >> $GITHUB_ENV
-      # 🔍 判断是否需要构建
+
       - name: 判断是否需要构建
         id: check_build
         run: |
@@ -89,12 +87,11 @@ jobs:
             echo "skip_build=false" >> $GITHUB_OUTPUT
             echo "✅ 发现新提交: $LATEST_COMMIT"
           fi
-      # ⏭️ 跳过无更新构建
+
       - name: 跳过无更新构建
         if: steps.check_build.outputs.skip_build == 'true'
         run: exit 0
 
-      # 🧱 构建 libvpx v1.14.0
       - name: 构建 libvpx v1.14.0
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
@@ -138,8 +135,6 @@ jobs:
           sudo ldconfig
           echo "✅ libde265 编译安装完成"
 
-
-      # 修复版：编译 libaom (aarch64) 加权限修复
       - name: 构建 libaom (AV1 解码依赖)
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
@@ -170,7 +165,59 @@ jobs:
           export PKG_CONFIG_PATH=${{ env.INSTALL_ROOT }}/lib/pkgconfig:$PKG_CONFIG_PATH
           sudo ldconfig
 
-      # 🛠️ 构建 GStreamer 解码器（新增 de265 / dtls）
+      # 🔧 修复 GStreamer GL 上下文初始化问题 (Zink 兼容性)
+      - name: 修复 GStreamer GL 上下文初始化
+        if: steps.check_build.outputs.skip_build == 'false'
+        run: |
+          echo "🔧 修复 GStreamer GL 上下文初始化 (Zink 兼容性)..."
+          cd gstreamer/subprojects/gst-plugins-base
+          
+          python3 << 'PYTHON_EOF'
+          import re
+
+          file_path = 'gst-libs/gst/gl/gstglcontext.c'
+
+          with open(file_path, 'r') as f:
+              lines = f.readlines()
+
+          new_lines = []
+          i = 0
+          was_active_inserted = False
+          restore_inserted = False
+
+          while i < len(lines):
+              line = lines[i]
+              new_lines.append(line)
+              
+              # 在 gl = context->gl_vtable; 之后插入激活代码
+              if not was_active_inserted and 'gl = context->gl_vtable;' in line:
+                  new_lines.append('  gboolean was_active;\n')
+                  new_lines.append('  was_active = gst_gl_context_get_current () == context;\n')
+                  new_lines.append('  if (!was_active) {\n')
+                  new_lines.append('    if (!gst_gl_context_activate (context, TRUE)) {\n')
+                  new_lines.append('      g_set_error (error, GST_GL_CONTEXT_ERROR,\n')
+                  new_lines.append('          GST_GL_CONTEXT_ERROR_FAILED,\n')
+                  new_lines.append('          "Failed to activate GL context for version check");\n')
+                  new_lines.append('      return FALSE;\n')
+                  new_lines.append('    }\n')
+                  new_lines.append('  }\n')
+                  was_active_inserted = True
+              
+              # 在 return TRUE; 之前插入恢复代码
+              if not restore_inserted and 'return TRUE;' in line and i > 0 and 'GST_DEBUG_OBJECT' in lines[i-1]:
+                  new_lines.append('  if (!was_active) {\n')
+                  new_lines.append('    gst_gl_context_activate (context, FALSE);\n')
+                  new_lines.append('  }\n')
+                  restore_inserted = True
+              
+              i += 1
+
+          with open(file_path, 'w') as f:
+              f.writelines(new_lines)
+
+          print("✅ GStreamer GL 上下文修复已应用")
+          PYTHON_EOF
+
       - name: 构建 GStreamer 解码器
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
@@ -222,9 +269,8 @@ jobs:
             --buildtype=release
           ninja -C build -j$(nproc)
           ninja -C build install
-          echo "✅ GStreamer 编译完成，已启用 aom+de265+dtls+vpx"
+          echo "✅ GStreamer 编译完成，已启用 aom+de265+dtls+vpx + Zink GL 修复"
 
-      # 🧩 修补 ELF 解释器
       - name: 修补 ELF 可执行文件
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
@@ -239,7 +285,6 @@ jobs:
             fi
           done
 
-      # 🧱 打包构建结果
       - name: 打包 glibc 目录
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
@@ -249,7 +294,6 @@ jobs:
           echo "$LATEST_COMMIT" > ${{ env.LAST_COMMIT_FILE }}
           echo "TAR_NAME=$TAR_NAME" >> $GITHUB_ENV
 
-      # ⬆️ 上传构建产物
       - name: 上传构建产物
         if: steps.check_build.outputs.skip_build == 'false'
         uses: actions/upload-artifact@v4
@@ -257,7 +301,6 @@ jobs:
           name: ${{ env.TAR_NAME }}
           path: /home/runner/${{ env.TAR_NAME }}
 
-      # 💾 上传提交记录
       - name: 上传提交记录
         if: steps.check_build.outputs.skip_build == 'false'
         uses: actions/upload-artifact@v4
@@ -266,7 +309,6 @@ jobs:
           path: ${{ env.LAST_COMMIT_FILE }}
           retention-days: 365
 
-      # 🚀 发布到 GitHub Release
       - name: 发布到 GitHub Release
         if: steps.check_build.outputs.skip_build == 'false'
         uses: softprops/action-gh-release@v1
@@ -297,6 +339,7 @@ jobs:
             - ✅ **libde265 HEVC 解码器 libde265dec**
             - ✅ **DTLS 解密 dtlsdec**
             - ✅ **libvpx VP8/VP9**
+            - ✅ **Zink GL 上下文修复** (修复 glGetString 问题)
             - ❌ **RTSP 服务器** (已禁用)
             - 🏗️ **构建类型**: release
             
@@ -309,7 +352,11 @@ jobs:
             gst-inspect-1.0 av1dec
             gst-inspect-1.0 libde265dec
             gst-inspect-1.0 dtlsdec
+            gst-inspect-1.0 gltestsrc
             ```
+            
+            ### 🔧 Zink 修复说明
+            此版本包含 GStreamer GL 上下文激活修复，解决了在 Zink 驱动下 `glGetString` 返回 NULL 的问题。
           files: /home/runner/${{ env.TAR_NAME }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
