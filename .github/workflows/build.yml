@@ -165,59 +165,6 @@ jobs:
           export PKG_CONFIG_PATH=${{ env.INSTALL_ROOT }}/lib/pkgconfig:$PKG_CONFIG_PATH
           sudo ldconfig
 
-      # 🔧 修复 GStreamer GL 上下文初始化问题 (Zink 兼容性)
-      - name: 修复 GStreamer GL 上下文初始化
-        if: steps.check_build.outputs.skip_build == 'false'
-        run: |
-          echo "🔧 修复 GStreamer GL 上下文初始化 (Zink 兼容性)..."
-          cd gstreamer/subprojects/gst-plugins-base
-          
-          python3 << 'PYTHON_EOF'
-          import re
-
-          file_path = 'gst-libs/gst/gl/gstglcontext.c'
-
-          with open(file_path, 'r') as f:
-              lines = f.readlines()
-
-          new_lines = []
-          i = 0
-          was_active_inserted = False
-          restore_inserted = False
-
-          while i < len(lines):
-              line = lines[i]
-              new_lines.append(line)
-              
-              # 在 gl = context->gl_vtable; 之后插入激活代码
-              if not was_active_inserted and 'gl = context->gl_vtable;' in line:
-                  new_lines.append('  gboolean was_active;\n')
-                  new_lines.append('  was_active = gst_gl_context_get_current () == context;\n')
-                  new_lines.append('  if (!was_active) {\n')
-                  new_lines.append('    if (!gst_gl_context_activate (context, TRUE)) {\n')
-                  new_lines.append('      g_set_error (error, GST_GL_CONTEXT_ERROR,\n')
-                  new_lines.append('          GST_GL_CONTEXT_ERROR_FAILED,\n')
-                  new_lines.append('          "Failed to activate GL context for version check");\n')
-                  new_lines.append('      return FALSE;\n')
-                  new_lines.append('    }\n')
-                  new_lines.append('  }\n')
-                  was_active_inserted = True
-              
-              # 在 return TRUE; 之前插入恢复代码
-              if not restore_inserted and 'return TRUE;' in line and i > 0 and 'GST_DEBUG_OBJECT' in lines[i-1]:
-                  new_lines.append('  if (!was_active) {\n')
-                  new_lines.append('    gst_gl_context_activate (context, FALSE);\n')
-                  new_lines.append('  }\n')
-                  restore_inserted = True
-              
-              i += 1
-
-          with open(file_path, 'w') as f:
-              f.writelines(new_lines)
-
-          print("✅ GStreamer GL 上下文修复已应用")
-          PYTHON_EOF
-
       - name: 构建 GStreamer 解码器
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
@@ -251,13 +198,11 @@ jobs:
             -Dgst-plugins-bad:nvcodec=disabled \
             -Dgst-plugins-bad:aom=enabled \
             -Dgst-plugins-bad:libde265=enabled \
-            -Dgst-plugins-bad:dtls=enabled \
+            -Dgst-plugins-bad:dtls=disabled \
             -Dgst-plugins-bad:x11=enabled \
-            -Dgst-plugins-bad:gl=enabled \
+            -Dgst-plugins-bad:gl=disabled \
             -Dgst-plugins-base:drm=disabled \
-            -Dgst-plugins-base:gl=enabled \
-            -Dgst-plugins-base:gl_platform=glx \
-            -Dgst-plugins-base:gl_winsys=x11 \
+            -Dgst-plugins-base:gl=disabled \
             -Dgst-plugins-base:alsa=disabled \
             -Dgst-plugins-base:theora=enabled \
             -Dgst-plugins-base:x11=enabled \
@@ -337,9 +282,7 @@ jobs:
             - ✅ **开发工具**
             - ✅ **AOM AV1 解码器 av1dec**
             - ✅ **libde265 HEVC 解码器 libde265dec**
-            - ✅ **DTLS 解密 dtlsdec**
-            - ✅ **libvpx VP8/VP9**
-            - ✅ **Zink GL 上下文修复** (修复 glGetString 问题)
+            - ✅ **libvpx VP8/VP9*
             - ❌ **RTSP 服务器** (已禁用)
             - 🏗️ **构建类型**: release
             
