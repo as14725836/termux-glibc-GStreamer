@@ -297,9 +297,6 @@ jobs:
             gst-inspect-1.0 dtlsdec
             gst-inspect-1.0 gltestsrc
             ```
-            
-            ### 🔧 Zink 修复说明
-            此版本包含 GStreamer GL 上下文激活修复，解决了在 Zink 驱动下 `glGetString` 返回 NULL 的问题。
           files: /home/runner/${{ env.TAR_NAME }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
