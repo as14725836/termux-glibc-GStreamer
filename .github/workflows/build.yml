@@ -176,6 +176,7 @@ jobs:
           meson setup build \
             --prefix=$INSTALL_ROOT \
             --libdir=lib \
+            -Dregistry-dir=/data/data/com.termux/files/usr/glibc/lib/gstreamer-1.0 \
             -Dbase=enabled \
             -Dpackage-origin="Termux-Glibc" \
             -Dgood=enabled \
