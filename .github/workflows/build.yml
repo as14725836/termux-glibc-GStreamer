@@ -1,4 +1,4 @@
-name: termux glibc GStreamer Decoders (aarch64, Dev + libvpx + aom AV1 + de265 HEVC + DTLS)
+name: termux glibc GStreamer Decoders (aarch64 + armv7l, Dev + libvpx + aom AV1 + de265 HEVC + DTLS)
 
 on:
   workflow_dispatch:
@@ -12,7 +12,8 @@ permissions:
 
 env:
   LAST_COMMIT_FILE: last_gst_commit.txt
-  INSTALL_ROOT: /data/data/com.termux/files/usr/glibc
+  INSTALL_ROOT_64: /data/data/com.termux/files/usr/glibc
+  INSTALL_ROOT_32: /data/data/com.termux/files/usr/glibc32
 
 jobs:
   build:
@@ -31,13 +32,14 @@ jobs:
           sudo rm /var/lib/apt/lists/lock
           sudo rm /var/cache/apt/archives/lock
 
-      - name: 安装基础依赖
+      - name: 安装基础依赖和交叉编译工具
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential python3-pip git pkg-config nasm cmake \
             libglib2.0-dev libdrm-dev libgl1-mesa-dev libglx-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
             liborc-0.4-dev libxv-dev libx11-dev libasound2-dev libpulse-dev patchelf \
-            libtheora-dev libx264-dev libx265-dev libvpx-dev libde265-dev libssl-dev autoconf automake libtool
+            libtheora-dev libx264-dev libx265-dev libvpx-dev libde265-dev libssl-dev autoconf automake libtool \
+            gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf binutils-arm-linux-gnueabihf
 
       - name: 升级 Meson 和 Ninja
         run: |
@@ -92,16 +94,17 @@ jobs:
         if: steps.check_build.outputs.skip_build == 'true'
         run: exit 0
 
-      - name: 构建 libvpx v1.14.0
+      # ==================== 64位构建 (aarch64) ====================
+      - name: 构建 libvpx v1.14.0 (64-bit)
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
-          echo "📦 构建 libvpx v1.14.0..."
+          echo "📦 构建 libvpx v1.14.0 (64-bit)..."
           git clone https://chromium.googlesource.com/webm/libvpx
           cd libvpx
           git checkout v1.14.0
           ./configure \
-            --prefix=${{ env.INSTALL_ROOT }} \
-            --libdir=${{ env.INSTALL_ROOT }}/lib \
+            --prefix=${{ env.INSTALL_ROOT_64 }} \
+            --libdir=${{ env.INSTALL_ROOT_64 }}/lib \
             --enable-shared \
             --enable-vp8 \
             --enable-vp9 \
@@ -111,43 +114,42 @@ jobs:
             --disable-examples \
             --disable-docs
           make -j$(nproc)
-          sudo mkdir -p ${{ env.INSTALL_ROOT }}/lib/gstreamer-1.0
+          sudo mkdir -p ${{ env.INSTALL_ROOT_64 }}/lib/gstreamer-1.0
           sudo make install
-          echo "✅ libvpx v1.14.0 构建完成"
+          echo "✅ libvpx v1.14.0 构建完成 (64-bit)"
 
-      - name: 构建 libde265 (HEVC 解码器依赖)
+      - name: 构建 libde265 (HEVC) (64-bit)
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
-          echo "📦 构建 libde265 HEVC..."
+          echo "📦 构建 libde265 HEVC (64-bit)..."
           git clone --depth=1 https://github.com/strukturag/libde265.git
           cd libde265
           mkdir -p build && cd build
           cmake .. \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_SHARED_LIBS=ON \
-            -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_ROOT }} \
+            -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_ROOT_64 }} \
             -DCMAKE_INSTALL_LIBDIR=lib \
             -DENABLE_SDL=OFF \
             -DBUILD_EXAMPLES=OFF \
             -DBUILD_TESTING=OFF
           make -j$(nproc)
           sudo make install
-          sudo ldconfig
-          echo "✅ libde265 编译安装完成"
+          echo "✅ libde265 编译安装完成 (64-bit)"
 
-      - name: 构建 libaom (AV1 解码依赖)
+      - name: 构建 libaom (AV1) (64-bit)
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
-          echo "📦 构建 libaom AV1 Codec..."
-          sudo mkdir -p ${{ env.INSTALL_ROOT }}
-          sudo chmod 755 ${{ env.INSTALL_ROOT }}
+          echo "📦 构建 libaom AV1 Codec (64-bit)..."
+          sudo mkdir -p ${{ env.INSTALL_ROOT_64 }}
+          sudo chmod 755 ${{ env.INSTALL_ROOT_64 }}
           git clone --depth=1 https://aomedia.googlesource.com/aom
           cd aom
           mkdir -p build && cd build
           cmake .. \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_SHARED_LIBS=ON \
-            -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_ROOT }} \
+            -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_ROOT_64 }} \
             -DCMAKE_INSTALL_LIBDIR=lib \
             -DCMAKE_INSTALL_BINDIR=bin \
             -DCMAKE_INSTALL_INCLUDEDIR=include \
@@ -155,30 +157,27 @@ jobs:
             -DENABLE_TESTS=OFF \
             -DENABLE_EXAMPLES=OFF \
             -DCONFIG_RUNTIME_CPU_DETECT=ON \
-            -DAOM_TARGET_CPU=arm64 \
-            -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON
+            -DAOM_TARGET_CPU=arm64
           make -j$(nproc)
           sudo make install
-          sudo chmod -R 755 ${{ env.INSTALL_ROOT }}/lib
-          sudo chmod -R 755 ${{ env.INSTALL_ROOT }}/include
-          echo "✅ libaom 编译安装完成"
-          export PKG_CONFIG_PATH=${{ env.INSTALL_ROOT }}/lib/pkgconfig:$PKG_CONFIG_PATH
-          sudo ldconfig
+          sudo chmod -R 755 ${{ env.INSTALL_ROOT_64 }}/lib
+          sudo chmod -R 755 ${{ env.INSTALL_ROOT_64 }}/include
+          echo "✅ libaom 编译安装完成 (64-bit)"
 
-      - name: 构建 GStreamer 解码器
+      - name: 构建 GStreamer (64-bit)
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
           cd gstreamer
           git submodule update --init --recursive
-          sudo mkdir -p $INSTALL_ROOT
+          sudo mkdir -p $INSTALL_ROOT_64
           sudo chmod -R 777 /data
-          export PKG_CONFIG_PATH=${{ env.INSTALL_ROOT }}/lib/pkgconfig:$PKG_CONFIG_PATH
-          meson setup build \
-            --prefix=$INSTALL_ROOT \
+          export PKG_CONFIG_PATH=${{ env.INSTALL_ROOT_64 }}/lib/pkgconfig:$PKG_CONFIG_PATH
+          meson setup build64 \
+            --prefix=$INSTALL_ROOT_64 \
             --libdir=lib \
             --libexecdir=/data/data/com.termux/files/usr/glibc/lib/gstreamer1.0 \
             -Dbase=enabled \
-            -Dpackage-origin="Termux-Glibc" \
+            -Dpackage-origin="Termux-Glibc-64bit" \
             -Dgood=enabled \
             -Dugly=enabled \
             -Dbad=enabled \
@@ -213,39 +212,239 @@ jobs:
             -Ddevtools=enabled \
             -Drtsp_server=disabled \
             --buildtype=release
-          ninja -C build -j$(nproc)
-          ninja -C build install
-          echo "✅ GStreamer 编译完成，已启用 aom+de265+dtls+vpx + Zink GL 修复"
+          ninja -C build64 -j$(nproc)
+          ninja -C build64 install
+          echo "✅ GStreamer 编译完成 (64-bit)"
 
-      - name: 修补 ELF 可执行文件
+      - name: 修补 ELF (64-bit)
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
-          INTERP=$INSTALL_ROOT/lib/ld-linux-aarch64.so.1
-          echo "🔧 修补 ELF 解释器: $INTERP"
+          INTERP=$INSTALL_ROOT_64/lib/ld-linux-aarch64.so.1
+          echo "🔧 修补 ELF 解释器 (64-bit): $INTERP"
           for DIR in bin lib/gstreamer1.0/gstreamer-1.0; do
-            if [ -d "$INSTALL_ROOT/$DIR" ]; then
-              echo "📁 修补 $DIR ..."
-              find "$INSTALL_ROOT/$DIR" -type f -exec file {} \; | grep ELF | cut -d: -f1 | while read f; do
+            if [ -d "$INSTALL_ROOT_64/$DIR" ]; then
+              find "$INSTALL_ROOT_64/$DIR" -type f -exec file {} \; | grep ELF | cut -d: -f1 | while read f; do
                 patchelf --set-interpreter "$INTERP" "$f" 2>/dev/null || true
               done
             fi
           done
 
-      - name: 打包 glibc 目录
+      # ==================== 32位构建 (armv7l) ====================
+      - name: 创建 Meson 交叉编译文件 (32-bit)
+        if: steps.check_build.outputs.skip_build == 'false'
+        run: |
+          cat > meson.cross << EOF
+          [binaries]
+          c = 'arm-linux-gnueabihf-gcc'
+          cpp = 'arm-linux-gnueabihf-g++'
+          ar = 'arm-linux-gnueabihf-ar'
+          strip = 'arm-linux-gnueabihf-strip'
+          pkgconfig = 'arm-linux-gnueabihf-pkg-config'
+          
+          [host_machine]
+          system = 'linux'
+          cpu_family = 'arm'
+          cpu = 'armv7l'
+          endian = 'little'
+          
+          [properties]
+          c_args = ['-march=armv7-a', '-mthumb', '-mfpu=neon', '-mfloat-abi=softfp']
+          c_link_args = ['-march=armv7-a', '-mthumb', '-mfpu=neon', '-mfloat-abi=softfp']
+          cpp_args = ['-march=armv7-a', '-mthumb', '-mfpu=neon', '-mfloat-abi=softfp']
+          cpp_link_args = ['-march=armv7-a', '-mthumb', '-mfpu=neon', '-mfloat-abi=softfp']
+          EOF
+
+      - name: 构建 libvpx v1.14.0 (32-bit)
+        if: steps.check_build.outputs.skip_build == 'false'
+        run: |
+          echo "📦 构建 libvpx v1.14.0 (32-bit)..."
+          cd libvpx
+          make distclean || true
+          export CC=arm-linux-gnueabihf-gcc
+          export CXX=arm-linux-gnueabihf-g++
+          export AR=arm-linux-gnueabihf-ar
+          export LD=arm-linux-gnueabihf-ld
+          ./configure \
+            --prefix=${{ env.INSTALL_ROOT_32 }} \
+            --libdir=${{ env.INSTALL_ROOT_32 }}/lib \
+            --enable-shared \
+            --enable-vp8 \
+            --enable-vp9 \
+            --enable-runtime-cpu-detect \
+            --target=armv7-linux-gcc \
+            --as=nasm \
+            --disable-examples \
+            --disable-docs \
+            --extra-cflags="-march=armv7-a -mthumb -mfpu=neon -mfloat-abi=softfp" \
+            --extra-cxxflags="-march=armv7-a -mthumb -mfpu=neon -mfloat-abi=softfp" \
+            --extra-ldflags="-march=armv7-a -mthumb -mfpu=neon -mfloat-abi=softfp"
+          make -j$(nproc)
+          sudo mkdir -p ${{ env.INSTALL_ROOT_32 }}/lib/gstreamer-1.0
+          sudo make install
+          echo "✅ libvpx v1.14.0 构建完成 (32-bit)"
+
+      - name: 构建 libde265 (HEVC) (32-bit)
+        if: steps.check_build.outputs.skip_build == 'false'
+        run: |
+          echo "📦 构建 libde265 HEVC (32-bit)..."
+          cd libde265
+          rm -rf build
+          mkdir -p build && cd build
+          export CC=arm-linux-gnueabihf-gcc
+          export CXX=arm-linux-gnueabihf-g++
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=ON \
+            -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_ROOT_32 }} \
+            -DCMAKE_INSTALL_LIBDIR=lib \
+            -DENABLE_SDL=OFF \
+            -DBUILD_EXAMPLES=OFF \
+            -DBUILD_TESTING=OFF \
+            -DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc \
+            -DCMAKE_CXX_COMPILER=arm-linux-gnueabihf-g++ \
+            -DCMAKE_C_FLAGS="-march=armv7-a -mthumb -mfpu=neon -mfloat-abi=softfp" \
+            -DCMAKE_CXX_FLAGS="-march=armv7-a -mthumb -mfpu=neon -mfloat-abi=softfp"
+          make -j$(nproc)
+          sudo make install
+          echo "✅ libde265 编译安装完成 (32-bit)"
+
+      - name: 构建 libaom (AV1) (32-bit)
+        if: steps.check_build.outputs.skip_build == 'false'
+        run: |
+          echo "📦 构建 libaom AV1 Codec (32-bit)..."
+          sudo mkdir -p ${{ env.INSTALL_ROOT_32 }}
+          sudo chmod 755 ${{ env.INSTALL_ROOT_32 }}
+          cd aom
+          rm -rf build
+          mkdir -p build && cd build
+          export CC=arm-linux-gnueabihf-gcc
+          export CXX=arm-linux-gnueabihf-g++
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=ON \
+            -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_ROOT_32 }} \
+            -DCMAKE_INSTALL_LIBDIR=lib \
+            -DCMAKE_INSTALL_BINDIR=bin \
+            -DCMAKE_INSTALL_INCLUDEDIR=include \
+            -DENABLE_AV1=ON \
+            -DENABLE_TESTS=OFF \
+            -DENABLE_EXAMPLES=OFF \
+            -DCONFIG_RUNTIME_CPU_DETECT=ON \
+            -DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc \
+            -DCMAKE_CXX_COMPILER=arm-linux-gnueabihf-g++ \
+            -DCMAKE_C_FLAGS="-march=armv7-a -mthumb -mfpu=neon -mfloat-abi=softfp" \
+            -DCMAKE_CXX_FLAGS="-march=armv7-a -mthumb -mfpu=neon -mfloat-abi=softfp"
+          make -j$(nproc)
+          sudo make install
+          sudo chmod -R 755 ${{ env.INSTALL_ROOT_32 }}/lib
+          sudo chmod -R 755 ${{ env.INSTALL_ROOT_32 }}/include
+          echo "✅ libaom 编译安装完成 (32-bit)"
+
+      - name: 构建 GStreamer (32-bit)
+        if: steps.check_build.outputs.skip_build == 'false'
+        run: |
+          cd gstreamer
+          sudo mkdir -p $INSTALL_ROOT_32
+          sudo chmod -R 777 /data
+          export PKG_CONFIG_PATH=${{ env.INSTALL_ROOT_32 }}/lib/pkgconfig:$PKG_CONFIG_PATH
+          export CC=arm-linux-gnueabihf-gcc
+          export CXX=arm-linux-gnueabihf-g++
+          export AR=arm-linux-gnueabihf-ar
+          export STRIP=arm-linux-gnueabihf-strip
+          
+          meson setup build32 \
+            --prefix=$INSTALL_ROOT_32 \
+            --libdir=lib \
+            --libexecdir=/data/data/com.termux/files/usr/glibc32/lib/gstreamer1.0 \
+            --cross-file ../meson.cross \
+            -Dbase=enabled \
+            -Dpackage-origin="Termux-Glibc-32bit" \
+            -Dgood=enabled \
+            -Dugly=enabled \
+            -Dbad=enabled \
+            -Dlibav=enabled \
+            -Dgpl=enabled \
+            -Ddefault_library=shared \
+            -Dtests=disabled \
+            -Ddoc=disabled \
+            -Dexamples=disabled \
+            -Dpython=disabled \
+            -Dnls=disabled \
+            -Dgst-plugins-good:pulse=enabled \
+            -Dgst-plugins-good:oss4=disabled \
+            -Dgst-plugins-good:oss=disabled \
+            -Dgst-plugins-good:vpx=enabled \
+            -Dgst-plugins-bad:drm=disabled \
+            -Dgst-plugins-bad:hip=disabled \
+            -Dgst-plugins-bad:nvcodec=disabled \
+            -Dgst-plugins-bad:aom=enabled \
+            -Dgst-plugins-bad:libde265=enabled \
+            -Dgst-plugins-bad:dtls=disabled \
+            -Dgst-plugins-bad:x11=enabled \
+            -Dgst-plugins-bad:gl=disabled \
+            -Dgst-plugins-base:drm=disabled \
+            -Dgst-plugins-base:gl=disabled \
+            -Dgst-plugins-base:alsa=disabled \
+            -Dgst-plugins-base:theora=enabled \
+            -Dgst-plugins-base:x11=enabled \
+            -Dintrospection=disabled \
+            -Dgst-full=enabled \
+            -Dgst-full-plugins='*' \
+            -Ddevtools=enabled \
+            -Drtsp_server=disabled \
+            --buildtype=release
+          ninja -C build32 -j$(nproc)
+          ninja -C build32 install
+          echo "✅ GStreamer 编译完成 (32-bit)"
+
+      - name: 修补 ELF (32-bit)
+        if: steps.check_build.outputs.skip_build == 'false'
+        run: |
+          INTERP=$INSTALL_ROOT_32/lib/ld-linux-armhf.so.3
+          echo "🔧 修补 ELF 解释器 (32-bit): $INTERP"
+          for DIR in bin lib/gstreamer1.0/gstreamer-1.0; do
+            if [ -d "$INSTALL_ROOT_32/$DIR" ]; then
+              find "$INSTALL_ROOT_32/$DIR" -type f -exec file {} \; | grep ELF | cut -d: -f1 | while read f; do
+                patchelf --set-interpreter "$INTERP" "$f" 2>/dev/null || true
+              done
+            fi
+          done
+
+      # ==================== 打包和发布 ====================
+      - name: 打包 64-bit
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
           cd /data/data/com.termux/files/usr
-          TAR_NAME="termux-glibc-gst-decoders-${VERSION}.tar.gz"
-          tar -czvf /home/runner/$TAR_NAME glibc
-          echo "$LATEST_COMMIT" > ${{ env.LAST_COMMIT_FILE }}
-          echo "TAR_NAME=$TAR_NAME" >> $GITHUB_ENV
+          TAR_NAME_64="termux-glibc-gst-decoders-64bit-${VERSION}.tar.gz"
+          tar -czvf /home/runner/$TAR_NAME_64 glibc
+          echo "TAR_NAME_64=$TAR_NAME_64" >> $GITHUB_ENV
 
-      - name: 上传构建产物
+      - name: 打包 32-bit
+        if: steps.check_build.outputs.skip_build == 'false'
+        run: |
+          cd /data/data/com.termux/files/usr
+          TAR_NAME_32="termux-glibc-gst-decoders-32bit-${VERSION}.tar.gz"
+          tar -czvf /home/runner/$TAR_NAME_32 glibc32
+          echo "TAR_NAME_32=$TAR_NAME_32" >> $GITHUB_ENV
+
+      - name: 保存提交记录
+        if: steps.check_build.outputs.skip_build == 'false'
+        run: |
+          echo "$LATEST_COMMIT" > ${{ env.LAST_COMMIT_FILE }}
+
+      - name: 上传 64-bit 产物
         if: steps.check_build.outputs.skip_build == 'false'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.TAR_NAME }}
-          path: /home/runner/${{ env.TAR_NAME }}
+          name: ${{ env.TAR_NAME_64 }}
+          path: /home/runner/${{ env.TAR_NAME_64 }}
+
+      - name: 上传 32-bit 产物
+        if: steps.check_build.outputs.skip_build == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.TAR_NAME_32 }}
+          path: /home/runner/${{ env.TAR_NAME_32 }}
 
       - name: 上传提交记录
         if: steps.check_build.outputs.skip_build == 'false'
@@ -255,18 +454,18 @@ jobs:
           path: ${{ env.LAST_COMMIT_FILE }}
           retention-days: 365
 
-      - name: 发布到 GitHub Release
+      - name: 发布到 GitHub Release (64-bit)
         if: steps.check_build.outputs.skip_build == 'false'
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ env.VERSION }}
+          tag_name: ${{ env.VERSION }}-64bit
           name: "GStreamer Decoders ${{ env.VERSION }} (aarch64, Termux glibc + AOM AV1 + de265 HEVC + DTLS)"
           body: |
-            ## 🎯 GStreamer 开发版本构建
+            ## 🎯 GStreamer 开发版本构建 (64-bit aarch64)
             
             ### 📋 构建信息
             - **版本**: `${{ env.VERSION }}`
-            - **架构**: aarch64
+            - **架构**: aarch64 (64-bit)
             - **环境**: Termux glibc
             - **提交**: [`${{ env.COMMIT_SHORT }}`](https://gitlab.freedesktop.org/gstreamer/gstreamer/-/commit/${{ env.LATEST_COMMIT }})
             - **提交日期**: ${{ env.COMMIT_DATE }}
@@ -274,30 +473,45 @@ jobs:
             - **构建时间**: `${{ env.BUILD_DATE }}`
             
             ### 🛠️ 构建特性
-            - ✅ **基础插件** (base)
-            - ✅ **优质插件** (good) 
-            - ✅ **丑陋插件** (ugly)
-            - ✅ **不良插件** (bad)
-            - ✅ **LibAV 支持**
-            - ✅ **GPL 插件**
-            - ✅ **开发工具**
-            - ✅ **AOM AV1 解码器 av1dec**
-            - ✅ **libde265 HEVC 解码器 libde265dec**
-            - ✅ **libvpx VP8/VP9*
-            - ❌ **RTSP 服务器** (已禁用)
+            - ✅ AOM AV1 解码器
+            - ✅ libde265 HEVC 解码器
+            - ✅ libvpx VP8/VP9
+            - ✅ 完整 GStreamer 插件集
             - 🏗️ **构建类型**: release
             
             ### 📦 文件信息
-            - **文件名**: `${{ env.TAR_NAME }}`
-            - **包含**: 完整 GStreamer + libaom + libde265 + DTLS + libvpx
+            - **文件名**: `${{ env.TAR_NAME_64 }}`
+          files: /home/runner/${{ env.TAR_NAME_64 }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 发布到 GitHub Release (32-bit)
+        if: steps.check_build.outputs.skip_build == 'false'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ env.VERSION }}-32bit
+          name: "GStreamer Decoders ${{ env.VERSION }} (armv7l 32-bit, Termux glibc + AOM AV1 + de265 HEVC + DTLS)"
+          body: |
+            ## 🎯 GStreamer 开发版本构建 (32-bit armv7l)
             
-            ### 📥 解码器验证命令
-            ```bash
-            gst-inspect-1.0 av1dec
-            gst-inspect-1.0 libde265dec
-            gst-inspect-1.0 dtlsdec
-            gst-inspect-1.0 gltestsrc
-            ```
-          files: /home/runner/${{ env.TAR_NAME }}
+            ### 📋 构建信息
+            - **版本**: `${{ env.VERSION }}`
+            - **架构**: armv7l (32-bit)
+            - **环境**: Termux glibc
+            - **提交**: [`${{ env.COMMIT_SHORT }}`](https://gitlab.freedesktop.org/gstreamer/gstreamer/-/commit/${{ env.LATEST_COMMIT }})
+            - **提交日期**: ${{ env.COMMIT_DATE }}
+            - **作者**: `${{ env.AUTHOR }}`
+            - **构建时间**: `${{ env.BUILD_DATE }}`
+            
+            ### 🛠️ 构建特性
+            - ✅ AOM AV1 解码器
+            - ✅ libde265 HEVC 解码器
+            - ✅ libvpx VP8/VP9
+            - ✅ 完整 GStreamer 插件集
+            - 🏗️ **构建类型**: release
+            
+            ### 📦 文件信息
+            - **文件名**: `${{ env.TAR_NAME_32 }}`
+          files: /home/runner/${{ env.TAR_NAME_32 }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
