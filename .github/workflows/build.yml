@@ -274,8 +274,7 @@ jobs:
             --disable-examples \
             --disable-docs \
             --extra-cflags="-march=armv7-a -mthumb -mfpu=neon -mfloat-abi=softfp" \
-            --extra-cxxflags="-march=armv7-a -mthumb -mfpu=neon -mfloat-abi=softfp" \
-            --extra-ldflags="-march=armv7-a -mthumb -mfpu=neon -mfloat-abi=softfp"
+            --extra-cxxflags="-march=armv7-a -mthumb -mfpu=neon -mfloat-abi=softfp"
           make -j$(nproc)
           sudo mkdir -p ${{ env.INSTALL_ROOT }}/lib32/gstreamer-1.0
           sudo make install
