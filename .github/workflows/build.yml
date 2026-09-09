@@ -12,8 +12,7 @@ permissions:
 
 env:
   LAST_COMMIT_FILE: last_gst_commit.txt
-  INSTALL_ROOT_64: /data/data/com.termux/files/usr/glibc
-  INSTALL_ROOT_32: /data/data/com.termux/files/usr/glibc32
+  INSTALL_ROOT: /data/data/com.termux/files/usr/glibc
 
 jobs:
   build:
@@ -29,8 +28,8 @@ jobs:
           sudo apt autoclean
           sudo rm -rf /var/lib/apt/lists/*
           sudo apt update
-          sudo rm /var/lib/apt/lists/lock
-          sudo rm /var/cache/apt/archives/lock
+          sudo rm /var/lib/apt/lists/lock 2>/dev/null || true
+          sudo rm /var/cache/apt/archives/lock 2>/dev/null || true
 
       - name: 安装基础依赖和交叉编译工具
         run: |
@@ -59,7 +58,7 @@ jobs:
           AUTHOR=$(git log -1 --pretty=format:'%an')
           DATE=$(date -u '+%Y-%m-%d %H:%M UTC')
           COMMIT_DATE=$(git log -1 --pretty=format:'%cd' --date=short)
-          VERSION=$(sed -n '2p' "meson.build" | grep -oP "version\\s*:\\s*'\\K[^']+")
+          VERSION=$(sed -n '2p' "meson.build" | grep -oP "version\\s*:\\s*'\\K[^']+" || echo "dev")
           echo "LATEST_COMMIT=$LATEST_COMMIT" >> $GITHUB_ENV
           echo "COMMIT_SHORT=$COMMIT_SHORT" >> $GITHUB_ENV
           echo "VERSION=$VERSION" >> $GITHUB_ENV
@@ -74,7 +73,6 @@ jobs:
           if [ -f "$FILE" ]; then
             LAST_COMMIT=$(cat "$FILE")
           else
-            echo "none" > "$FILE"
             LAST_COMMIT="none"
           fi
           echo "LAST_COMMIT=$LAST_COMMIT" >> $GITHUB_ENV
@@ -103,8 +101,8 @@ jobs:
           cd libvpx
           git checkout v1.14.0
           ./configure \
-            --prefix=${{ env.INSTALL_ROOT_64 }} \
-            --libdir=${{ env.INSTALL_ROOT_64 }}/lib \
+            --prefix=${{ env.INSTALL_ROOT }} \
+            --libdir=${{ env.INSTALL_ROOT }}/lib \
             --enable-shared \
             --enable-vp8 \
             --enable-vp9 \
@@ -114,7 +112,7 @@ jobs:
             --disable-examples \
             --disable-docs
           make -j$(nproc)
-          sudo mkdir -p ${{ env.INSTALL_ROOT_64 }}/lib/gstreamer-1.0
+          sudo mkdir -p ${{ env.INSTALL_ROOT }}/lib/gstreamer-1.0
           sudo make install
           echo "✅ libvpx v1.14.0 构建完成 (64-bit)"
 
@@ -128,7 +126,7 @@ jobs:
           cmake .. \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_SHARED_LIBS=ON \
-            -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_ROOT_64 }} \
+            -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_ROOT }} \
             -DCMAKE_INSTALL_LIBDIR=lib \
             -DENABLE_SDL=OFF \
             -DBUILD_EXAMPLES=OFF \
@@ -141,15 +139,15 @@ jobs:
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
           echo "📦 构建 libaom AV1 Codec (64-bit)..."
-          sudo mkdir -p ${{ env.INSTALL_ROOT_64 }}
-          sudo chmod 755 ${{ env.INSTALL_ROOT_64 }}
+          sudo mkdir -p ${{ env.INSTALL_ROOT }}
+          sudo chmod 755 ${{ env.INSTALL_ROOT }}
           git clone --depth=1 https://aomedia.googlesource.com/aom
           cd aom
           mkdir -p build && cd build
           cmake .. \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_SHARED_LIBS=ON \
-            -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_ROOT_64 }} \
+            -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_ROOT }} \
             -DCMAKE_INSTALL_LIBDIR=lib \
             -DCMAKE_INSTALL_BINDIR=bin \
             -DCMAKE_INSTALL_INCLUDEDIR=include \
@@ -160,8 +158,8 @@ jobs:
             -DAOM_TARGET_CPU=arm64
           make -j$(nproc)
           sudo make install
-          sudo chmod -R 755 ${{ env.INSTALL_ROOT_64 }}/lib
-          sudo chmod -R 755 ${{ env.INSTALL_ROOT_64 }}/include
+          sudo chmod -R 755 ${{ env.INSTALL_ROOT }}/lib
+          sudo chmod -R 755 ${{ env.INSTALL_ROOT }}/include
           echo "✅ libaom 编译安装完成 (64-bit)"
 
       - name: 构建 GStreamer (64-bit)
@@ -169,13 +167,13 @@ jobs:
         run: |
           cd gstreamer
           git submodule update --init --recursive
-          sudo mkdir -p $INSTALL_ROOT_64
+          sudo mkdir -p $INSTALL_ROOT
           sudo chmod -R 777 /data
-          export PKG_CONFIG_PATH=${{ env.INSTALL_ROOT_64 }}/lib/pkgconfig:$PKG_CONFIG_PATH
+          export PKG_CONFIG_PATH=${{ env.INSTALL_ROOT }}/lib/pkgconfig:$PKG_CONFIG_PATH
           meson setup build64 \
-            --prefix=$INSTALL_ROOT_64 \
+            --prefix=$INSTALL_ROOT \
             --libdir=lib \
-            --libexecdir=/data/data/com.termux/files/usr/glibc/lib/gstreamer1.0 \
+            --libexecdir=$INSTALL_ROOT/lib/gstreamer1.0 \
             -Dbase=enabled \
             -Dpackage-origin="Termux-Glibc-64bit" \
             -Dgood=enabled \
@@ -219,11 +217,11 @@ jobs:
       - name: 修补 ELF (64-bit)
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
-          INTERP=$INSTALL_ROOT_64/lib/ld-linux-aarch64.so.1
+          INTERP=$INSTALL_ROOT/lib/ld-linux-aarch64.so.1
           echo "🔧 修补 ELF 解释器 (64-bit): $INTERP"
           for DIR in bin lib/gstreamer1.0/gstreamer-1.0; do
-            if [ -d "$INSTALL_ROOT_64/$DIR" ]; then
-              find "$INSTALL_ROOT_64/$DIR" -type f -exec file {} \; | grep ELF | cut -d: -f1 | while read f; do
+            if [ -d "$INSTALL_ROOT/$DIR" ]; then
+              find "$INSTALL_ROOT/$DIR" -type f -exec file {} \; | grep ELF | cut -d: -f1 | while read f; do
                 patchelf --set-interpreter "$INTERP" "$f" 2>/dev/null || true
               done
             fi
@@ -265,8 +263,8 @@ jobs:
           export AR=arm-linux-gnueabihf-ar
           export LD=arm-linux-gnueabihf-ld
           ./configure \
-            --prefix=${{ env.INSTALL_ROOT_32 }} \
-            --libdir=${{ env.INSTALL_ROOT_32 }}/lib \
+            --prefix=${{ env.INSTALL_ROOT }} \
+            --libdir=${{ env.INSTALL_ROOT }}/lib32 \
             --enable-shared \
             --enable-vp8 \
             --enable-vp9 \
@@ -279,7 +277,7 @@ jobs:
             --extra-cxxflags="-march=armv7-a -mthumb -mfpu=neon -mfloat-abi=softfp" \
             --extra-ldflags="-march=armv7-a -mthumb -mfpu=neon -mfloat-abi=softfp"
           make -j$(nproc)
-          sudo mkdir -p ${{ env.INSTALL_ROOT_32 }}/lib/gstreamer-1.0
+          sudo mkdir -p ${{ env.INSTALL_ROOT }}/lib32/gstreamer-1.0
           sudo make install
           echo "✅ libvpx v1.14.0 构建完成 (32-bit)"
 
@@ -295,8 +293,8 @@ jobs:
           cmake .. \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_SHARED_LIBS=ON \
-            -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_ROOT_32 }} \
-            -DCMAKE_INSTALL_LIBDIR=lib \
+            -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_ROOT }} \
+            -DCMAKE_INSTALL_LIBDIR=lib32 \
             -DENABLE_SDL=OFF \
             -DBUILD_EXAMPLES=OFF \
             -DBUILD_TESTING=OFF \
@@ -312,8 +310,8 @@ jobs:
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
           echo "📦 构建 libaom AV1 Codec (32-bit)..."
-          sudo mkdir -p ${{ env.INSTALL_ROOT_32 }}
-          sudo chmod 755 ${{ env.INSTALL_ROOT_32 }}
+          sudo mkdir -p ${{ env.INSTALL_ROOT }}
+          sudo chmod 755 ${{ env.INSTALL_ROOT }}
           cd aom
           rm -rf build
           mkdir -p build && cd build
@@ -322,8 +320,8 @@ jobs:
           cmake .. \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_SHARED_LIBS=ON \
-            -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_ROOT_32 }} \
-            -DCMAKE_INSTALL_LIBDIR=lib \
+            -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_ROOT }} \
+            -DCMAKE_INSTALL_LIBDIR=lib32 \
             -DCMAKE_INSTALL_BINDIR=bin \
             -DCMAKE_INSTALL_INCLUDEDIR=include \
             -DENABLE_AV1=ON \
@@ -336,26 +334,26 @@ jobs:
             -DCMAKE_CXX_FLAGS="-march=armv7-a -mthumb -mfpu=neon -mfloat-abi=softfp"
           make -j$(nproc)
           sudo make install
-          sudo chmod -R 755 ${{ env.INSTALL_ROOT_32 }}/lib
-          sudo chmod -R 755 ${{ env.INSTALL_ROOT_32 }}/include
+          sudo chmod -R 755 ${{ env.INSTALL_ROOT }}/lib32
+          sudo chmod -R 755 ${{ env.INSTALL_ROOT }}/include
           echo "✅ libaom 编译安装完成 (32-bit)"
 
       - name: 构建 GStreamer (32-bit)
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
           cd gstreamer
-          sudo mkdir -p $INSTALL_ROOT_32
+          sudo mkdir -p $INSTALL_ROOT
           sudo chmod -R 777 /data
-          export PKG_CONFIG_PATH=${{ env.INSTALL_ROOT_32 }}/lib/pkgconfig:$PKG_CONFIG_PATH
+          export PKG_CONFIG_PATH=${{ env.INSTALL_ROOT }}/lib32/pkgconfig:$PKG_CONFIG_PATH
           export CC=arm-linux-gnueabihf-gcc
           export CXX=arm-linux-gnueabihf-g++
           export AR=arm-linux-gnueabihf-ar
           export STRIP=arm-linux-gnueabihf-strip
           
           meson setup build32 \
-            --prefix=$INSTALL_ROOT_32 \
-            --libdir=lib \
-            --libexecdir=/data/data/com.termux/files/usr/glibc32/lib/gstreamer1.0 \
+            --prefix=$INSTALL_ROOT \
+            --libdir=lib32 \
+            --libexecdir=$INSTALL_ROOT/lib32/gstreamer1.0 \
             --cross-file ../meson.cross \
             -Dbase=enabled \
             -Dpackage-origin="Termux-Glibc-32bit" \
@@ -400,11 +398,11 @@ jobs:
       - name: 修补 ELF (32-bit)
         if: steps.check_build.outputs.skip_build == 'false'
         run: |
-          INTERP=$INSTALL_ROOT_32/lib/ld-linux-armhf.so.3
+          INTERP=$INSTALL_ROOT/lib/ld-linux-armhf.so.3
           echo "🔧 修补 ELF 解释器 (32-bit): $INTERP"
-          for DIR in bin lib/gstreamer1.0/gstreamer-1.0; do
-            if [ -d "$INSTALL_ROOT_32/$DIR" ]; then
-              find "$INSTALL_ROOT_32/$DIR" -type f -exec file {} \; | grep ELF | cut -d: -f1 | while read f; do
+          for DIR in bin lib32/gstreamer1.0/gstreamer-1.0; do
+            if [ -d "$INSTALL_ROOT/$DIR" ]; then
+              find "$INSTALL_ROOT/$DIR" -type f -exec file {} \; | grep ELF | cut -d: -f1 | while read f; do
                 patchelf --set-interpreter "$INTERP" "$f" 2>/dev/null || true
               done
             fi
@@ -424,7 +422,7 @@ jobs:
         run: |
           cd /data/data/com.termux/files/usr
           TAR_NAME_32="termux-glibc-gst-decoders-32bit-${VERSION}.tar.gz"
-          tar -czvf /home/runner/$TAR_NAME_32 glibc32
+          tar -czvf /home/runner/$TAR_NAME_32 glibc
           echo "TAR_NAME_32=$TAR_NAME_32" >> $GITHUB_ENV
 
       - name: 保存提交记录
